@@ -13,6 +13,9 @@ interface ReviewLogDao {
     @Query("SELECT * FROM review_logs ORDER BY reviewedAtEpochMs DESC")
     fun getAllLogs(): Flow<List<ReviewLog>>
 
+    @Query("SELECT * FROM review_logs")
+    suspend fun getAllLogsOnce(): List<ReviewLog>
+
     @Query("SELECT * FROM review_logs WHERE learningItemId = :itemId ORDER BY reviewedAtEpochMs DESC")
     fun getLogsForItem(itemId: Long): Flow<List<ReviewLog>>
 

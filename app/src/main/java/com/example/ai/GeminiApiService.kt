@@ -1,5 +1,6 @@
 package com.example.ai
 
+import android.util.Base64
 import android.util.Log
 import com.example.BuildConfig
 import com.example.data.model.ActionType
@@ -13,6 +14,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -20,23 +22,144 @@ import java.util.concurrent.TimeUnit
 
 object GeminiApiService {
 
-    private const val BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
+    const val MODEL_TRANSCRIBE = "gemini-3.5-transcribe"
+    const val MODEL_TEXT_ANALYSIS = "gemini-3.8-flash"
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
         .build()
+
+    private fun resolveApiKey(customApiKey: String): String {
+        return when {
+            customApiKey.isNotBlank() -> customApiKey.trim()
+            BuildConfig.GEMINI_API_KEY.isNotBlank() && BuildConfig.GEMINI_API_KEY != "MY_GEMINI_API_KEY" -> BuildConfig.GEMINI_API_KEY
+            else -> ""
+        }
+    }
+
+    /**
+     * Transcribes recorded audio using model gemini-3.5-transcribe with graceful fallback to gemini-3.8-flash.
+     */
+    suspend fun transcribeAudio(
+        audioFile: File,
+        mimeType: String = "audio/mp4",
+        customApiKey: String = ""
+    ): String? = withContext(Dispatchers.IO) {
+        val apiKey = resolveApiKey(customApiKey)
+        if (apiKey.isBlank()) {
+            Log.w("GeminiApi", "No Gemini API key available for audio transcription")
+            return@withContext null
+        }
+
+        if (!audioFile.exists() || audioFile.length() == 0L) {
+            Log.w("GeminiApi", "Audio file does not exist or is empty")
+            return@withContext null
+        }
+
+        val audioBytes = try {
+            audioFile.readBytes()
+        } catch (e: Exception) {
+            Log.e("GeminiApi", "Failed to read audio file: ${e.message}")
+            return@withContext null
+        }
+
+        val base64Data = Base64.encodeToString(audioBytes, Base64.NO_WRAP)
+
+        // Try primary model: gemini-3.5-transcribe as requested
+        val primaryResult = executeTranscriptionRequest(
+            model = MODEL_TRANSCRIBE,
+            base64Data = base64Data,
+            mimeType = mimeType,
+            apiKey = apiKey
+        )
+
+        if (primaryResult != null) {
+            return@withContext primaryResult
+        }
+
+        Log.w("GeminiApi", "Primary model $MODEL_TRANSCRIBE returned null/error, attempting fallback with $MODEL_TEXT_ANALYSIS")
+        return@withContext executeTranscriptionRequest(
+            model = MODEL_TEXT_ANALYSIS,
+            base64Data = base64Data,
+            mimeType = mimeType,
+            apiKey = apiKey
+        )
+    }
+
+    private fun executeTranscriptionRequest(
+        model: String,
+        base64Data: String,
+        mimeType: String,
+        apiKey: String
+    ): String? {
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
+
+        val requestJson = JSONObject().apply {
+            val contentsArray = JSONArray().apply {
+                put(JSONObject().apply {
+                    val partsArray = JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("text", "Transcribe this audio recording accurately and verbatim in the original spoken language (English, Malayalam, or mixed Manglish). Output only the transcribed text without any intro, conversational commentary, or quotation marks.")
+                        })
+                        put(JSONObject().apply {
+                            put("inlineData", JSONObject().apply {
+                                put("mimeType", mimeType)
+                                put("data", base64Data)
+                            })
+                        })
+                    }
+                    put("parts", partsArray)
+                })
+            }
+            put("contents", contentsArray)
+            put("generationConfig", JSONObject().apply {
+                put("temperature", 0.0)
+            })
+        }
+
+        return try {
+            val requestBody = requestJson.toString().toRequestBody("application/json".toMediaType())
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("x-goog-api-key", apiKey)
+                .post(requestBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val err = response.body?.string() ?: ""
+                    Log.w("GeminiApi", "Model $model returned HTTP ${response.code}: $err")
+                    return null
+                }
+
+                val responseBody = response.body?.string() ?: return null
+                val responseJson = JSONObject(responseBody)
+                val candidates = responseJson.optJSONArray("candidates") ?: return null
+                val firstCandidate = candidates.optJSONObject(0) ?: return null
+                val content = firstCandidate.optJSONObject("content") ?: return null
+                val parts = content.optJSONArray("parts") ?: return null
+                val textPart = parts.optJSONObject(0)?.optString("text")?.trim()
+
+                if (!textPart.isNullOrBlank()) {
+                    Log.d("GeminiApi", "Transcription successful ($model): $textPart")
+                    textPart
+                } else {
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("GeminiApi", "Exception during transcription with $model: ${e.message}")
+            null
+        }
+    }
 
     suspend fun parseNaturalLanguageCommand(
         prompt: String,
         customApiKey: String = ""
     ): GemmyParsedAction? = withContext(Dispatchers.IO) {
-        val apiKey = when {
-            customApiKey.isNotBlank() -> customApiKey.trim()
-            BuildConfig.GEMINI_API_KEY.isNotBlank() && BuildConfig.GEMINI_API_KEY != "MY_GEMINI_API_KEY" -> BuildConfig.GEMINI_API_KEY
-            else -> ""
-        }
+        val apiKey = resolveApiKey(customApiKey)
 
         if (apiKey.isBlank()) {
             Log.d("GeminiApi", "No Gemini API key available, using offline parser.")
@@ -93,94 +216,96 @@ Output ONLY valid raw JSON without markdown formatting.
         }
 
         try {
-            val url = "$BASE_URL?key=$apiKey"
+            val url = "https://generativelanguage.googleapis.com/v1beta/models/$MODEL_TEXT_ANALYSIS:generateContent"
             val requestBody = requestJson.toString().toRequestBody("application/json".toMediaType())
             val request = Request.Builder()
                 .url(url)
+                .addHeader("x-goog-api-key", apiKey)
                 .post(requestBody)
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                Log.w("GeminiApi", "Gemini HTTP error ${response.code}: ${response.message}")
-                return@withContext null
-            }
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w("GeminiApi", "Gemini HTTP error ${response.code}: ${response.message}")
+                    return@withContext null
+                }
 
-            val responseBody = response.body?.string() ?: return@withContext null
-            val responseJson = JSONObject(responseBody)
-            val candidates = responseJson.optJSONArray("candidates") ?: return@withContext null
-            val firstCandidate = candidates.optJSONObject(0) ?: return@withContext null
-            val content = firstCandidate.optJSONObject("content") ?: return@withContext null
-            val parts = content.optJSONArray("parts") ?: return@withContext null
-            val textPart = parts.optJSONObject(0)?.optString("text") ?: return@withContext null
+                val responseBody = response.body?.string() ?: return@withContext null
+                val responseJson = JSONObject(responseBody)
+                val candidates = responseJson.optJSONArray("candidates") ?: return@withContext null
+                val firstCandidate = candidates.optJSONObject(0) ?: return@withContext null
+                val content = firstCandidate.optJSONObject("content") ?: return@withContext null
+                val parts = content.optJSONArray("parts") ?: return@withContext null
+                val textPart = parts.optJSONObject(0)?.optString("text") ?: return@withContext null
 
-            // Parse response JSON
-            val cleanJson = textPart.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-            val parsedObj = JSONObject(cleanJson)
+                // Parse response JSON
+                val cleanJson = textPart.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+                val parsedObj = JSONObject(cleanJson)
 
-            val actionStr = parsedObj.optString("action", "UNKNOWN")
-            val actionType = try {
-                ActionType.valueOf(actionStr)
-            } catch (e: Exception) {
-                ActionType.UNKNOWN
-            }
-
-            val title = parsedObj.optString("title", prompt.take(30))
-            val meaning = parsedObj.optString("meaning", "")
-            val example = parsedObj.optString("example", "")
-            val description = parsedObj.optString("description", "")
-            val category = parsedObj.optString("category", "General")
-            val dateStr = parsedObj.optString("date", "")
-            val timeStr = parsedObj.optString("time", "")
-            val repeatStr = parsedObj.optString("repeat", "NONE")
-            val needsClarification = parsedObj.optBoolean("needsClarification", false)
-            val clarificationPrompt = parsedObj.optString("clarificationPrompt", "")
-
-            var targetDateMs: Long? = null
-            var hour: Int? = null
-            var minute: Int? = null
-
-            if (dateStr.isNotBlank() && dateStr != "null") {
-                try {
-                    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                    val d = sdf.parse(dateStr)
-                    targetDateMs = d?.time
+                val actionStr = parsedObj.optString("action", "UNKNOWN")
+                val actionType = try {
+                    ActionType.valueOf(actionStr)
                 } catch (e: Exception) {
-                    Log.e("GeminiApi", "Error parsing date: $dateStr")
+                    ActionType.UNKNOWN
                 }
-            }
 
-            if (timeStr.isNotBlank() && timeStr != "null") {
-                val partsTime = timeStr.split(":")
-                if (partsTime.size >= 2) {
-                    hour = partsTime[0].toIntOrNull()
-                    minute = partsTime[1].toIntOrNull()
+                val title = parsedObj.optString("title", prompt.take(30))
+                val meaning = parsedObj.optString("meaning", "")
+                val example = parsedObj.optString("example", "")
+                val description = parsedObj.optString("description", "")
+                val category = parsedObj.optString("category", "General")
+                val dateStr = parsedObj.optString("date", "")
+                val timeStr = parsedObj.optString("time", "")
+                val repeatStr = parsedObj.optString("repeat", "NONE")
+                val needsClarification = parsedObj.optBoolean("needsClarification", false)
+                val clarificationPrompt = parsedObj.optString("clarificationPrompt", "")
+
+                var targetDateMs: Long? = null
+                var hour: Int? = null
+                var minute: Int? = null
+
+                if (dateStr.isNotBlank() && dateStr != "null") {
+                    try {
+                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                        val d = sdf.parse(dateStr)
+                        targetDateMs = d?.time
+                    } catch (e: Exception) {
+                        Log.e("GeminiApi", "Error parsing date: $dateStr")
+                    }
                 }
-            }
 
-            val repeat = try {
-                RepeatSchedule.valueOf(repeatStr)
-            } catch (e: Exception) {
-                RepeatSchedule.NONE
-            }
+                if (timeStr.isNotBlank() && timeStr != "null") {
+                    val partsTime = timeStr.split(":")
+                    if (partsTime.size >= 2) {
+                        hour = partsTime[0].toIntOrNull()
+                        minute = partsTime[1].toIntOrNull()
+                    }
+                }
 
-            GemmyParsedAction(
-                actionType = actionType,
-                title = title,
-                meaning = meaning,
-                example = example,
-                description = description,
-                category = category,
-                targetDateEpochMs = targetDateMs,
-                timeHour = hour,
-                timeMinute = minute,
-                repeatSchedule = repeat,
-                isSpacedRepetition = actionType == ActionType.CREATE_LEARNING_ITEM,
-                needsClarification = needsClarification,
-                clarificationPrompt = clarificationPrompt,
-                originalText = prompt,
-                confidenceSource = "Gemini AI"
-            )
+                val repeat = try {
+                    RepeatSchedule.valueOf(repeatStr)
+                } catch (e: Exception) {
+                    RepeatSchedule.NONE
+                }
+
+                GemmyParsedAction(
+                    actionType = actionType,
+                    title = title,
+                    meaning = meaning,
+                    example = example,
+                    description = description,
+                    category = category,
+                    targetDateEpochMs = targetDateMs,
+                    timeHour = hour,
+                    timeMinute = minute,
+                    repeatSchedule = repeat,
+                    isSpacedRepetition = actionType == ActionType.CREATE_LEARNING_ITEM,
+                    needsClarification = needsClarification,
+                    clarificationPrompt = clarificationPrompt,
+                    originalText = prompt,
+                    confidenceSource = "Gemini AI"
+                )
+            }
         } catch (e: Exception) {
             Log.e("GeminiApi", "Error calling Gemini: ${e.message}")
             null

@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.GraphicEq
+import com.example.ui.viewmodel.VoiceAssistantTab
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -127,7 +129,11 @@ fun HomeScreen(
                 onStartVoice = onStartVoice,
                 onAddReminder = onNavigateToCreateReminder,
                 onAddAlarm = onNavigateToAlarms,
-                onAddLearning = onNavigateToAddLearning
+                onAddLearning = onNavigateToAddLearning,
+                onTranscribeAudio = {
+                    viewModel.setVoiceAssistantTab(VoiceAssistantTab.AUDIO_TRANSCRIBE)
+                    onStartVoice()
+                }
             )
         }
 
@@ -326,7 +332,7 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     QuickActionButton(
                         label = "Add Memory",
@@ -343,9 +349,19 @@ fun HomeScreen(
                         modifier = Modifier.weight(1f)
                     )
                     QuickActionButton(
+                        label = "Transcribe",
+                        icon = Icons.Default.GraphicEq,
+                        color = GemmyVioletTertiary,
+                        onClick = {
+                            viewModel.setVoiceAssistantTab(VoiceAssistantTab.AUDIO_TRANSCRIBE)
+                            onStartVoice()
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    QuickActionButton(
                         label = "Set Alarm",
                         icon = Icons.Default.Alarm,
-                        color = GemmyVioletTertiary,
+                        color = Color(0xFF0EA5E9),
                         onClick = onNavigateToAlarms,
                         modifier = Modifier.weight(1f)
                     )
@@ -364,7 +380,8 @@ fun AssistantHeroCard(
     onStartVoice: () -> Unit,
     onAddReminder: () -> Unit,
     onAddAlarm: () -> Unit,
-    onAddLearning: () -> Unit
+    onAddLearning: () -> Unit,
+    onTranscribeAudio: () -> Unit = {}
 ) {
     ElevatedCard(
         modifier = Modifier
@@ -487,12 +504,29 @@ fun AssistantHeroCard(
                         .clickable { onAddAlarm() }
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(imageVector = Icons.Default.Alarm, contentDescription = null, modifier = Modifier.size(16.dp), tint = GemmyVioletTertiary)
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text("Alarm", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier
+                        .weight(1.2f)
+                        .clickable { onTranscribeAudio() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(imageVector = Icons.Default.GraphicEq, contentDescription = null, modifier = Modifier.size(16.dp), tint = GemmyIndigoPrimary)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Transcribe", style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }

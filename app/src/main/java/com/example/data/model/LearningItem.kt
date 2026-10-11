@@ -34,6 +34,7 @@ data class LearningItem(
     val intervalDays: Int = 1,
     val repetitionStage: Int = 0,
     val recallCount: Int = 0,
+    val easeFactor: Float = 2.5f,
     val isSpacedRepetitionEnabled: Boolean = true,
     val status: LearningStatus = LearningStatus.NEW
 )

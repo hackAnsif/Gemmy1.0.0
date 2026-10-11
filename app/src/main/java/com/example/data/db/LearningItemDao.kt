@@ -24,6 +24,12 @@ interface LearningItemDao {
     @Query("SELECT * FROM learning_items WHERE nextReviewEpochMs <= :currentTimeEpochMs ORDER BY nextReviewEpochMs ASC")
     suspend fun getItemsDueForReviewOnce(currentTimeEpochMs: Long): List<LearningItem>
 
+    @Query("SELECT * FROM learning_items WHERE isSpacedRepetitionEnabled = 1 AND nextReviewEpochMs > :currentTimeEpochMs ORDER BY nextReviewEpochMs ASC")
+    suspend fun getFutureScheduledReviewsOnce(currentTimeEpochMs: Long): List<LearningItem>
+
+    @Query("SELECT * FROM learning_items")
+    suspend fun getAllItemsOnce(): List<LearningItem>
+
     @Query("SELECT * FROM learning_items WHERE status = 'REMEMBERED'")
     fun getRememberedItems(): Flow<List<LearningItem>>
 

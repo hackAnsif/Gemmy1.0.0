@@ -1,5 +1,7 @@
 package com.example.data.repository
 
+import android.app.NotificationManager
+import android.content.Context
 import com.example.data.db.AlarmItemDao
 import com.example.data.db.LearningItemDao
 import com.example.data.db.ReminderItemDao
@@ -9,6 +11,8 @@ import com.example.data.model.LearningItem
 import com.example.data.model.LearningStatus
 import com.example.data.model.RecallRating
 import com.example.data.model.ReminderItem
+import com.example.data.model.ReminderPriority
+import com.example.data.model.RepeatSchedule
 import com.example.data.model.ReviewLog
 import com.example.data.preferences.UserPreferencesRepository
 import com.example.scheduler.GemmyScheduler
@@ -50,7 +54,11 @@ class GemmyRepository(
 
     suspend fun updateLearningItem(item: LearningItem) {
         learningDao.update(item)
-        scheduler.scheduleReview(item)
+        if (item.isSpacedRepetitionEnabled) {
+            scheduler.scheduleReview(item)
+        } else {
+            scheduler.cancelReview(item.id)
+        }
     }
 
     suspend fun deleteLearningItem(id: Long) {
@@ -58,51 +66,44 @@ class GemmyRepository(
         learningDao.deleteById(id)
     }
 
+    suspend fun getFutureScheduledReviewsOnce(now: Long): List<LearningItem> {
+        return learningDao.getFutureScheduledReviewsOnce(now)
+    }
+
     /**
-     * Spaced-Repetition Review Algorithm (SuperMemo SM-2 inspired with user intervals)
+     * True Cognitive Spaced-Repetition SM-2 Algorithm with Dynamic Ease Factor
      */
     suspend fun recordRecallReview(item: LearningItem, rating: RecallRating) {
         val currentInterval = if (item.intervalDays <= 0) 1 else item.intervalDays
+        val quality = when (rating) {
+            RecallRating.AGAIN -> 1
+            RecallRating.HARD -> 3
+            RecallRating.GOOD -> 4
+            RecallRating.EASY -> 5
+        }
+
+        // SM-2 Ease Factor calculation
+        val efDelta = 0.1f - (5 - quality) * (0.08f + (5 - quality) * 0.02f)
+        val newEaseFactor = kotlin.math.max(1.3f, item.easeFactor + efDelta)
+
         val nextIntervalDays: Int
         val nextStage: Int
         val nextStatus: LearningStatus
 
-        when (rating) {
-            RecallRating.AGAIN -> {
-                // Forgot: Reset interval to 1 day
-                nextIntervalDays = 1
-                nextStage = 0
-                nextStatus = LearningStatus.LEARNING
+        if (quality < 3) {
+            // Forgotten: Reset interval to 1 day
+            nextIntervalDays = 1
+            nextStage = 0
+            nextStatus = LearningStatus.LEARNING
+        } else {
+            // Recalled successfully
+            nextIntervalDays = when (item.repetitionStage) {
+                0 -> if (rating == RecallRating.EASY) 2 else 1
+                1 -> if (rating == RecallRating.EASY) 6 else 3
+                else -> kotlin.math.max(1, (currentInterval * newEaseFactor).toInt())
             }
-            RecallRating.HARD -> {
-                // Difficult recall: slight interval increase
-                nextIntervalDays = kotlin.math.max(1, (currentInterval * 1.2).toInt())
-                nextStage = item.repetitionStage
-                nextStatus = LearningStatus.LEARNING
-            }
-            RecallRating.GOOD -> {
-                // Standard recall: progressive intervals [1 -> 3 -> 7 -> 14 -> 30]
-                nextIntervalDays = when (item.repetitionStage) {
-                    0 -> 3
-                    1 -> 7
-                    2 -> 14
-                    3 -> 30
-                    else -> kotlin.math.max(currentInterval * 2, 45)
-                }
-                nextStage = item.repetitionStage + 1
-                nextStatus = if (nextIntervalDays >= 30) LearningStatus.REMEMBERED else LearningStatus.REVIEWING
-            }
-            RecallRating.EASY -> {
-                // Confident recall: accelerated interval
-                nextIntervalDays = when (item.repetitionStage) {
-                    0 -> 5
-                    1 -> 12
-                    2 -> 25
-                    else -> kotlin.math.max(currentInterval * 2 + 10, 60)
-                }
-                nextStage = item.repetitionStage + 2
-                nextStatus = LearningStatus.REMEMBERED
-            }
+            nextStage = item.repetitionStage + 1
+            nextStatus = if (nextIntervalDays >= 21) LearningStatus.REMEMBERED else LearningStatus.REVIEWING
         }
 
         val nextReviewEpochMs = System.currentTimeMillis() + (nextIntervalDays * 86400000L)
@@ -112,6 +113,7 @@ class GemmyRepository(
             intervalDays = nextIntervalDays,
             repetitionStage = nextStage,
             recallCount = item.recallCount + 1,
+            easeFactor = newEaseFactor,
             status = nextStatus
         )
 
@@ -125,7 +127,9 @@ class GemmyRepository(
             )
         )
 
-        scheduler.scheduleReview(updatedItem)
+        if (updatedItem.isSpacedRepetitionEnabled) {
+            scheduler.scheduleReview(updatedItem)
+        }
     }
 
     // --- Reminders ---
@@ -188,6 +192,10 @@ class GemmyRepository(
 
     suspend fun snoozeReminder(id: Long, snoozeUntilMs: Long) {
         reminderDao.snoozeReminder(id, snoozeUntilMs)
+        val reminder = reminderDao.getReminderById(id)
+        if (reminder != null) {
+            scheduler.scheduleReminder(reminder.copy(dueTimeEpochMs = snoozeUntilMs, isSnoozed = true, snoozeUntilEpochMs = snoozeUntilMs))
+        }
     }
 
     suspend fun getAllPendingRemindersOnce(): List<ReminderItem> {
@@ -244,14 +252,12 @@ class GemmyRepository(
         return reviewLogDao.getCountReviewedToday(calendar.timeInMillis)
     }
 
-    // --- Data Export & Import (JSON) ---
+    // --- Lossless Data Export & Import (JSON) ---
     suspend fun exportDataToJson(): String {
         val root = JSONObject()
 
-        // 1. Learning items
-        val learningList = mutableListOf<LearningItem>()
-        // Collect items from DAO
-        val items = learningDao.getItemsDueForReviewOnce(Long.MAX_VALUE) // Gets all items
+        // 1. All Learning Items
+        val items = learningDao.getAllItemsOnce()
         val learningArray = JSONArray()
         for (item in items) {
             val obj = JSONObject().apply {
@@ -265,16 +271,20 @@ class GemmyRepository(
                 put("tags", item.tags)
                 put("createdAtEpochMs", item.createdAtEpochMs)
                 put("nextReviewEpochMs", item.nextReviewEpochMs)
+                put("lastReviewedEpochMs", item.lastReviewedEpochMs)
                 put("intervalDays", item.intervalDays)
                 put("repetitionStage", item.repetitionStage)
+                put("recallCount", item.recallCount)
+                put("easeFactor", item.easeFactor.toDouble())
+                put("isSpacedRepetitionEnabled", item.isSpacedRepetitionEnabled)
                 put("status", item.status.name)
             }
             learningArray.put(obj)
         }
         root.put("learning_items", learningArray)
 
-        // 2. Reminders
-        val reminders = reminderDao.getAllPendingRemindersOnce()
+        // 2. All Reminders (pending and completed)
+        val reminders = reminderDao.getAllRemindersOnce()
         val reminderArray = JSONArray()
         for (r in reminders) {
             val obj = JSONObject().apply {
@@ -286,13 +296,19 @@ class GemmyRepository(
                 put("priority", r.priority.name)
                 put("repeatSchedule", r.repeatSchedule.name)
                 put("isCompleted", r.isCompleted)
+                put("completedAtEpochMs", r.completedAtEpochMs)
+                put("isSnoozed", r.isSnoozed)
+                put("snoozeUntilEpochMs", r.snoozeUntilEpochMs)
+                put("soundEnabled", r.soundEnabled)
+                put("vibrateEnabled", r.vibrateEnabled)
+                put("createdAtEpochMs", r.createdAtEpochMs)
             }
             reminderArray.put(obj)
         }
         root.put("reminders", reminderArray)
 
-        // 3. Alarms
-        val alarms = alarmDao.getActiveAlarmsOnce()
+        // 3. All Alarms
+        val alarms = alarmDao.getAllAlarmsOnce()
         val alarmArray = JSONArray()
         for (a in alarms) {
             val obj = JSONObject().apply {
@@ -301,10 +317,31 @@ class GemmyRepository(
                 put("minute", a.minute)
                 put("label", a.label)
                 put("isEnabled", a.isEnabled)
+                put("isRepeating", a.isRepeating)
+                put("daysOfWeek", a.daysOfWeek)
+                put("vibrateEnabled", a.vibrateEnabled)
+                put("snoozeMinutes", a.snoozeMinutes)
+                put("createdAtEpochMs", a.createdAtEpochMs)
             }
             alarmArray.put(obj)
         }
         root.put("alarms", alarmArray)
+
+        // 4. Review Logs
+        val logs = reviewLogDao.getAllLogsOnce()
+        val logsArray = JSONArray()
+        for (log in logs) {
+            val obj = JSONObject().apply {
+                put("id", log.id)
+                put("learningItemId", log.learningItemId)
+                put("learningItemTitle", log.learningItemTitle)
+                put("rating", log.rating.name)
+                put("intervalDaysAssigned", log.intervalDaysAssigned)
+                put("reviewedAtEpochMs", log.reviewedAtEpochMs)
+            }
+            logsArray.put(obj)
+        }
+        root.put("review_logs", logsArray)
         root.put("exportedAtEpochMs", System.currentTimeMillis())
 
         return root.toString(2)
@@ -312,12 +349,16 @@ class GemmyRepository(
 
     suspend fun importDataFromJson(jsonStr: String): Boolean {
         return try {
+            // Payload safety check: maximum 25 MB string
+            if (jsonStr.length > 25 * 1024 * 1024) return false
+
             val root = JSONObject(jsonStr)
 
             // Import learning items
             if (root.has("learning_items")) {
                 val array = root.getJSONArray("learning_items")
-                for (i in 0 until array.length()) {
+                val count = kotlin.math.min(array.length(), 10_000)
+                for (i in 0 until count) {
                     val obj = array.getJSONObject(i)
                     val item = LearningItem(
                         title = obj.getString("title"),
@@ -329,8 +370,12 @@ class GemmyRepository(
                         tags = obj.optString("tags", ""),
                         createdAtEpochMs = obj.optLong("createdAtEpochMs", System.currentTimeMillis()),
                         nextReviewEpochMs = obj.optLong("nextReviewEpochMs", System.currentTimeMillis() + 86400000L),
+                        lastReviewedEpochMs = obj.optLong("lastReviewedEpochMs", 0L),
                         intervalDays = obj.optInt("intervalDays", 1),
                         repetitionStage = obj.optInt("repetitionStage", 0),
+                        recallCount = obj.optInt("recallCount", 0),
+                        easeFactor = obj.optDouble("easeFactor", 2.5).toFloat(),
+                        isSpacedRepetitionEnabled = obj.optBoolean("isSpacedRepetitionEnabled", true),
                         status = try {
                             LearningStatus.valueOf(obj.optString("status", "NEW"))
                         } catch (e: Exception) {
@@ -344,13 +389,31 @@ class GemmyRepository(
             // Import reminders
             if (root.has("reminders")) {
                 val array = root.getJSONArray("reminders")
-                for (i in 0 until array.length()) {
+                val count = kotlin.math.min(array.length(), 10_000)
+                for (i in 0 until count) {
                     val obj = array.getJSONObject(i)
                     val reminder = ReminderItem(
                         title = obj.getString("title"),
                         description = obj.optString("description", ""),
                         dueTimeEpochMs = obj.optLong("dueTimeEpochMs", System.currentTimeMillis() + 3600000L),
-                        category = obj.optString("category", "General")
+                        category = obj.optString("category", "General"),
+                        priority = try {
+                            ReminderPriority.valueOf(obj.optString("priority", "MEDIUM"))
+                        } catch (e: Exception) {
+                            ReminderPriority.MEDIUM
+                        },
+                        repeatSchedule = try {
+                            RepeatSchedule.valueOf(obj.optString("repeatSchedule", "NONE"))
+                        } catch (e: Exception) {
+                            RepeatSchedule.NONE
+                        },
+                        isCompleted = obj.optBoolean("isCompleted", false),
+                        completedAtEpochMs = obj.optLong("completedAtEpochMs", 0L),
+                        isSnoozed = obj.optBoolean("isSnoozed", false),
+                        snoozeUntilEpochMs = obj.optLong("snoozeUntilEpochMs", 0L),
+                        soundEnabled = obj.optBoolean("soundEnabled", true),
+                        vibrateEnabled = obj.optBoolean("vibrateEnabled", true),
+                        createdAtEpochMs = obj.optLong("createdAtEpochMs", System.currentTimeMillis())
                     )
                     insertReminder(reminder)
                 }
@@ -359,13 +422,19 @@ class GemmyRepository(
             // Import alarms
             if (root.has("alarms")) {
                 val array = root.getJSONArray("alarms")
-                for (i in 0 until array.length()) {
+                val count = kotlin.math.min(array.length(), 1_000)
+                for (i in 0 until count) {
                     val obj = array.getJSONObject(i)
                     val alarm = AlarmItem(
                         hour = obj.getInt("hour"),
                         minute = obj.getInt("minute"),
                         label = obj.optString("label", "Alarm"),
-                        isEnabled = obj.optBoolean("isEnabled", true)
+                        isEnabled = obj.optBoolean("isEnabled", true),
+                        isRepeating = obj.optBoolean("isRepeating", false),
+                        daysOfWeek = obj.optString("daysOfWeek", ""),
+                        vibrateEnabled = obj.optBoolean("vibrateEnabled", true),
+                        snoozeMinutes = obj.optInt("snoozeMinutes", 10),
+                        createdAtEpochMs = obj.optLong("createdAtEpochMs", System.currentTimeMillis())
                     )
                     insertAlarm(alarm)
                 }
@@ -378,7 +447,20 @@ class GemmyRepository(
         }
     }
 
-    suspend fun clearAllData() {
+    suspend fun clearAllData(context: Context? = null) {
+        val reminders = reminderDao.getAllRemindersOnce()
+        val alarms = alarmDao.getAllAlarmsOnce()
+        val reviews = learningDao.getAllItemsOnce()
+
+        // Cancel all pending AlarmManager intents
+        scheduler.cancelAllScheduledAlarms(reminders, alarms, reviews)
+
+        // Cancel all active system notifications
+        context?.let {
+            val nm = it.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            nm?.cancelAll()
+        }
+
         learningDao.clearAll()
         reminderDao.clearAll()
         alarmDao.clearAll()

@@ -36,6 +36,9 @@ interface ReminderItemDao {
     @Query("SELECT * FROM reminder_items WHERE isCompleted = 0")
     suspend fun getAllPendingRemindersOnce(): List<ReminderItem>
 
+    @Query("SELECT * FROM reminder_items")
+    suspend fun getAllRemindersOnce(): List<ReminderItem>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(reminder: ReminderItem): Long
 

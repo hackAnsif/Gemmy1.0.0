@@ -1,15 +1,20 @@
 package com.example.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.ai.GeminiApiService
 import com.example.data.model.AlarmItem
 import com.example.data.model.GemmyParsedAction
 import com.example.data.model.LearningItem
 import com.example.data.model.RecallRating
 import com.example.data.model.ReminderItem
 import com.example.data.repository.GemmyRepository
+import com.example.voice.AudioRecorderHelper
 import com.example.voice.GemmyNluParser
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -17,7 +22,22 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.Calendar
+
+enum class VoiceAssistantTab {
+    VOICE_COMMAND,
+    AUDIO_TRANSCRIBE
+}
+
+data class AudioTranscriptionUiState(
+    val isRecording: Boolean = false,
+    val recordingDurationSec: Int = 0,
+    val isTranscribing: Boolean = false,
+    val transcribedText: String = "",
+    val amplitude: Int = 0,
+    val errorMessage: String? = null
+)
 
 data class VoiceAssistantUiState(
     val isListening: Boolean = false,
@@ -27,7 +47,8 @@ data class VoiceAssistantUiState(
     val parsedAction: GemmyParsedAction? = null,
     val showConfirmationDialog: Boolean = false,
     val followUpQuestion: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val activeTab: VoiceAssistantTab = VoiceAssistantTab.VOICE_COMMAND
 )
 
 class GemmyViewModel(
@@ -94,6 +115,10 @@ class GemmyViewModel(
     // Voice Assistant UI State
     private val _voiceState = MutableStateFlow(VoiceAssistantUiState())
     val voiceState: StateFlow<VoiceAssistantUiState> = _voiceState.asStateFlow()
+
+    // Audio Transcription State (using model gemini-3.5-transcribe)
+    private val _audioTranscriptionState = MutableStateFlow(AudioTranscriptionUiState())
+    val audioTranscriptionState: StateFlow<AudioTranscriptionUiState> = _audioTranscriptionState.asStateFlow()
 
     // Library Search & Filter State
     private val _searchQuery = MutableStateFlow("")
@@ -321,26 +346,40 @@ class GemmyViewModel(
         viewModelScope.launch {
             when (action.actionType) {
                 com.example.data.model.ActionType.CREATE_LEARNING_ITEM -> {
-                    val dateMs = action.targetDateEpochMs ?: (System.currentTimeMillis() + 86400000L)
+                    val cal = Calendar.getInstance().apply {
+                        if (action.targetDateEpochMs != null) {
+                            timeInMillis = action.targetDateEpochMs
+                        } else {
+                            add(Calendar.DAY_OF_YEAR, 1)
+                        }
+                        set(Calendar.HOUR_OF_DAY, action.timeHour ?: 20)
+                        set(Calendar.MINUTE, action.timeMinute ?: 0)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }
+                    val reviewDateMs = cal.timeInMillis
+
                     val item = LearningItem(
                         title = action.title,
                         meaning = action.meaning,
                         example = action.example,
                         category = action.category,
-                        nextReviewEpochMs = dateMs,
+                        nextReviewEpochMs = reviewDateMs,
                         isSpacedRepetitionEnabled = true
                     )
                     repository.insertLearningItem(item)
                     showUserMessage("Created learning review for \"${item.title}\"!")
                 }
                 com.example.data.model.ActionType.CREATE_REMINDER -> {
-                    val cal = Calendar.getInstance()
-                    if (action.targetDateEpochMs != null) {
-                        cal.timeInMillis = action.targetDateEpochMs
+                    val cal = Calendar.getInstance().apply {
+                        if (action.targetDateEpochMs != null) {
+                            timeInMillis = action.targetDateEpochMs
+                        }
+                        set(Calendar.HOUR_OF_DAY, action.timeHour ?: 9)
+                        set(Calendar.MINUTE, action.timeMinute ?: 0)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
                     }
-                    cal.set(Calendar.HOUR_OF_DAY, action.timeHour ?: 9)
-                    cal.set(Calendar.MINUTE, action.timeMinute ?: 0)
-                    cal.set(Calendar.SECOND, 0)
                     val dueTimeMs = cal.timeInMillis
 
                     val reminder = ReminderItem(
@@ -372,7 +411,142 @@ class GemmyViewModel(
     }
 
     fun dismissVoiceDialog() {
+        cancelAudioRecording()
         _voiceState.value = VoiceAssistantUiState()
+    }
+
+    fun setVoiceAssistantTab(tab: VoiceAssistantTab) {
+        _voiceState.value = _voiceState.value.copy(activeTab = tab)
+    }
+
+    // Audio Recording & Transcription (using model gemini-3.5-transcribe)
+    private var audioRecorderHelper: AudioRecorderHelper? = null
+    private var recordingTimerJob: Job? = null
+    private var amplitudeJob: Job? = null
+    private var currentRecordingFile: File? = null
+
+    fun startAudioRecording(context: Context) {
+        val helper = AudioRecorderHelper(context)
+        audioRecorderHelper = helper
+        val cacheFile = File(context.cacheDir, "gemmy_audio_${System.currentTimeMillis()}.m4a")
+        currentRecordingFile = cacheFile
+
+        val started = helper.startRecording(cacheFile)
+        if (started) {
+            _audioTranscriptionState.value = AudioTranscriptionUiState(
+                isRecording = true,
+                recordingDurationSec = 0,
+                isTranscribing = false,
+                transcribedText = "",
+                errorMessage = null
+            )
+
+            recordingTimerJob?.cancel()
+            recordingTimerJob = viewModelScope.launch {
+                var seconds = 0
+                while (_audioTranscriptionState.value.isRecording) {
+                    delay(1000)
+                    seconds++
+                    _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
+                        recordingDurationSec = seconds
+                    )
+                }
+            }
+
+            amplitudeJob?.cancel()
+            amplitudeJob = viewModelScope.launch {
+                while (_audioTranscriptionState.value.isRecording) {
+                    delay(100)
+                    val amp = helper.getMaxAmplitude()
+                    _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
+                        amplitude = amp
+                    )
+                }
+            }
+        } else {
+            _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
+                isRecording = false,
+                errorMessage = "Microphone recording could not start. Please ensure microphone permissions are granted."
+            )
+        }
+    }
+
+    fun stopAudioRecordingAndTranscribe(
+        context: Context,
+        autoProcessAsCommand: Boolean = false,
+        onTranscribed: ((String) -> Unit)? = null
+    ) {
+        recordingTimerJob?.cancel()
+        amplitudeJob?.cancel()
+        val helper = audioRecorderHelper
+        val file = helper?.stopRecording() ?: currentRecordingFile
+
+        _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
+            isRecording = false,
+            isTranscribing = true,
+            errorMessage = null
+        )
+
+        if (file == null || !file.exists() || file.length() == 0L) {
+            _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
+                isTranscribing = false,
+                errorMessage = "Audio recording was empty. Please hold or tap to record your voice."
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                val transcript = GeminiApiService.transcribeAudio(
+                    audioFile = file,
+                    mimeType = "audio/mp4",
+                    customApiKey = userApiKey.value
+                )
+
+                if (!transcript.isNullOrBlank()) {
+                    _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
+                        isTranscribing = false,
+                        transcribedText = transcript,
+                        errorMessage = null
+                    )
+                    onTranscribed?.invoke(transcript)
+
+                    if (autoProcessAsCommand) {
+                        _voiceState.value = _voiceState.value.copy(recognizedText = transcript)
+                        processVoiceCommand(transcript)
+                    }
+                } else {
+                    _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
+                        isTranscribing = false,
+                        errorMessage = "Transcription returned an empty result. Ensure API key or network connection is active."
+                    )
+                }
+            } catch (e: Exception) {
+                _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
+                    isTranscribing = false,
+                    errorMessage = "Transcription failed: ${e.message}"
+                )
+            } finally {
+                try {
+                    file.delete()
+                } catch (ignored: Exception) {}
+            }
+        }
+    }
+
+    fun cancelAudioRecording() {
+        recordingTimerJob?.cancel()
+        amplitudeJob?.cancel()
+        audioRecorderHelper?.cancelRecording()
+        audioRecorderHelper = null
+        _audioTranscriptionState.value = AudioTranscriptionUiState()
+    }
+
+    fun clearTranscribedText() {
+        _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
+            transcribedText = "",
+            errorMessage = null
+        )
     }
 
     // Settings Updates
@@ -412,9 +586,9 @@ class GemmyViewModel(
         }
     }
 
-    fun clearAllData() {
+    fun clearAllData(context: android.content.Context? = null) {
         viewModelScope.launch {
-            repository.clearAllData()
+            repository.clearAllData(context)
             showUserMessage("All data cleared.")
         }
     }

@@ -61,4 +61,37 @@ class ExampleRobolectricTest {
         assertTrue(action.needsClarification)
         assertTrue(action.clarificationPrompt.isNotBlank())
     }
+
+    @Test
+    fun testGeminiTranscriptionModelTarget() {
+        assertEquals("gemini-3.5-transcribe", com.example.ai.GeminiApiService.MODEL_TRANSCRIBE)
+    }
+
+    @Test
+    fun testAudioRecorderInstantiation() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val recorder = com.example.voice.AudioRecorderHelper(context)
+        org.junit.Assert.assertFalse(recorder.isRecording)
+        assertEquals(0, recorder.getMaxAmplitude())
+    }
+
+    @Test
+    fun testAudioTranscriptionUiState() {
+        val state = com.example.ui.viewmodel.AudioTranscriptionUiState()
+        org.junit.Assert.assertFalse(state.isRecording)
+        org.junit.Assert.assertFalse(state.isTranscribing)
+        assertEquals("", state.transcribedText)
+        assertEquals(0, state.recordingDurationSec)
+    }
+
+    @Test
+    fun testRoomDatabaseAccess() = kotlinx.coroutines.runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = com.example.data.db.GemmyDatabase.getDatabase(context)
+        org.junit.Assert.assertNotNull(db)
+        val reminders = db.reminderItemDao().getAllPendingRemindersOnce()
+        org.junit.Assert.assertNotNull(reminders)
+        val alarms = db.alarmItemDao().getActiveAlarmsOnce()
+        org.junit.Assert.assertNotNull(alarms)
+    }
 }

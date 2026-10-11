@@ -18,7 +18,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Schedule
+import com.example.ui.components.AudioTranscribeInputDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -37,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,9 +55,12 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
+import com.example.ui.viewmodel.GemmyViewModel
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddLearningScreen(
+    viewModel: GemmyViewModel,
     onNavigateBack: () -> Unit,
     onSaveItem: (LearningItem) -> Unit,
     initialTitle: String = "",
@@ -63,30 +69,33 @@ fun AddLearningScreen(
 ) {
     val context = LocalContext.current
 
-    var title by remember { mutableStateOf(initialTitle) }
-    var meaning by remember { mutableStateOf(initialMeaning) }
-    var example by remember { mutableStateOf(initialExample) }
-    var notes by remember { mutableStateOf("") }
-    var language by remember { mutableStateOf("English") }
-    var category by remember { mutableStateOf("English Vocabulary") }
-    var tags by remember { mutableStateOf("") }
+    var title by rememberSaveable { mutableStateOf(initialTitle) }
+    var meaning by rememberSaveable { mutableStateOf(initialMeaning) }
+    var example by rememberSaveable { mutableStateOf(initialExample) }
+    var notes by rememberSaveable { mutableStateOf("") }
+    var language by rememberSaveable { mutableStateOf("English") }
+    var category by rememberSaveable { mutableStateOf("English Vocabulary") }
+    var tags by rememberSaveable { mutableStateOf("") }
+    var activeTranscribeTarget by rememberSaveable { mutableStateOf<String?>(null) }
 
-    var isSmartReview by remember { mutableStateOf(true) }
+    var isSmartReview by rememberSaveable { mutableStateOf(true) }
 
-    // Custom review date & time
-    val calendar = remember {
+    // Custom review date & time with zeroed seconds and milliseconds
+    val defaultCalendar = remember {
         Calendar.getInstance().apply {
             add(Calendar.DAY_OF_YEAR, 1)
             set(Calendar.HOUR_OF_DAY, 20)
             set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
         }
     }
-    var reviewDateMs by remember { mutableStateOf(calendar.timeInMillis) }
-    var displayDateStr by remember {
-        mutableStateOf(SimpleDateFormat("EEE, MMM d, yyyy", Locale.getDefault()).format(calendar.time))
+    var reviewDateMs by rememberSaveable { mutableStateOf(defaultCalendar.timeInMillis) }
+    val displayDateStr = remember(reviewDateMs) {
+        SimpleDateFormat("EEE, MMM d, yyyy", Locale.getDefault()).format(reviewDateMs)
     }
-    var displayTimeStr by remember {
-        mutableStateOf(SimpleDateFormat("h:mm a", Locale.getDefault()).format(calendar.time))
+    val displayTimeStr = remember(reviewDateMs) {
+        SimpleDateFormat("h:mm a", Locale.getDefault()).format(reviewDateMs)
     }
 
     val categories = listOf(
@@ -127,6 +136,11 @@ fun AddLearningScreen(
                 onValueChange = { title = it },
                 label = { Text("Title / Term / Formula / Concept *") },
                 placeholder = { Text("e.g. Ephemeral or Bernoulli Equation") },
+                trailingIcon = {
+                    IconButton(onClick = { activeTranscribeTarget = "Title" }) {
+                        Icon(Icons.Default.GraphicEq, contentDescription = "Transcribe Title", tint = GemmyIndigoPrimary)
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("learning_title_input"),
@@ -140,6 +154,11 @@ fun AddLearningScreen(
                 onValueChange = { meaning = it },
                 label = { Text("Meaning / Explanation / Formula") },
                 placeholder = { Text("e.g. Lasting for a very short time.") },
+                trailingIcon = {
+                    IconButton(onClick = { activeTranscribeTarget = "Meaning" }) {
+                        Icon(Icons.Default.GraphicEq, contentDescription = "Transcribe Meaning", tint = GemmyIndigoPrimary)
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("learning_meaning_input"),
@@ -153,6 +172,11 @@ fun AddLearningScreen(
                 onValueChange = { example = it },
                 label = { Text("Example Sentence / Context") },
                 placeholder = { Text("e.g. The beauty of the sunset was ephemeral.") },
+                trailingIcon = {
+                    IconButton(onClick = { activeTranscribeTarget = "Example" }) {
+                        Icon(Icons.Default.GraphicEq, contentDescription = "Transcribe Example", tint = GemmyIndigoPrimary)
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("learning_example_input"),
@@ -270,8 +294,9 @@ fun AddLearningScreen(
                                             c.set(Calendar.YEAR, y)
                                             c.set(Calendar.MONTH, m)
                                             c.set(Calendar.DAY_OF_MONTH, d)
+                                            c.set(Calendar.SECOND, 0)
+                                            c.set(Calendar.MILLISECOND, 0)
                                             reviewDateMs = c.timeInMillis
-                                            displayDateStr = SimpleDateFormat("EEE, MMM d, yyyy", Locale.getDefault()).format(c.time)
                                         },
                                         c.get(Calendar.YEAR),
                                         c.get(Calendar.MONTH),
@@ -302,8 +327,9 @@ fun AddLearningScreen(
                                         { _, h, min ->
                                             c.set(Calendar.HOUR_OF_DAY, h)
                                             c.set(Calendar.MINUTE, min)
+                                            c.set(Calendar.SECOND, 0)
+                                            c.set(Calendar.MILLISECOND, 0)
                                             reviewDateMs = c.timeInMillis
-                                            displayTimeStr = SimpleDateFormat("h:mm a", Locale.getDefault()).format(c.time)
                                         },
                                         c.get(Calendar.HOUR_OF_DAY),
                                         c.get(Calendar.MINUTE),
@@ -367,5 +393,21 @@ fun AddLearningScreen(
                 Text("Save Memory Item", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
         }
+    }
+
+    if (activeTranscribeTarget != null) {
+        AudioTranscribeInputDialog(
+            fieldLabel = activeTranscribeTarget!!,
+            viewModel = viewModel,
+            onDismiss = { activeTranscribeTarget = null },
+            onTranscriptionConfirmed = { text ->
+                when (activeTranscribeTarget) {
+                    "Title" -> title = text
+                    "Meaning" -> meaning = text
+                    "Example" -> example = text
+                }
+                activeTranscribeTarget = null
+            }
+        )
     }
 }

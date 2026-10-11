@@ -183,10 +183,12 @@ fun GemmyApp(
                             viewModel = viewModel
                         )
                         "add_learning" -> AddLearningScreen(
+                            viewModel = viewModel,
                             onNavigateBack = { currentScreen = "home" },
                             onSaveItem = { item -> viewModel.saveLearningItem(item) }
                         )
                         "create_reminder" -> CreateReminderScreen(
+                            viewModel = viewModel,
                             onNavigateBack = { currentScreen = "home" },
                             onSaveReminder = { reminder -> viewModel.saveReminder(reminder) }
                         )

@@ -18,7 +18,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Schedule
+import com.example.ui.components.AudioTranscribeInputDialog
+import com.example.ui.viewmodel.GemmyViewModel
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -57,6 +60,7 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateReminderScreen(
+    viewModel: GemmyViewModel,
     onNavigateBack: () -> Unit,
     onSaveReminder: (ReminderItem) -> Unit
 ) {
@@ -64,6 +68,7 @@ fun CreateReminderScreen(
 
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
+    var activeTranscribeTarget by remember { mutableStateOf<String?>(null) }
     var category by remember { mutableStateOf("General") }
     var priority by remember { mutableStateOf(ReminderPriority.MEDIUM) }
     var repeatSchedule by remember { mutableStateOf(RepeatSchedule.NONE) }
@@ -111,6 +116,11 @@ fun CreateReminderScreen(
                 onValueChange = { title = it },
                 label = { Text("Reminder Title *") },
                 placeholder = { Text("e.g. Submit engineering assignment") },
+                trailingIcon = {
+                    IconButton(onClick = { activeTranscribeTarget = "Title" }) {
+                        Icon(Icons.Default.GraphicEq, contentDescription = "Transcribe Title", tint = GemmyIndigoPrimary)
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("reminder_title_input"),
@@ -123,6 +133,11 @@ fun CreateReminderScreen(
                 onValueChange = { description = it },
                 label = { Text("Description / Notes") },
                 placeholder = { Text("e.g. Include problem 4 and 5 solutions") },
+                trailingIcon = {
+                    IconButton(onClick = { activeTranscribeTarget = "Description" }) {
+                        Icon(Icons.Default.GraphicEq, contentDescription = "Transcribe Description", tint = GemmyIndigoPrimary)
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("reminder_desc_input"),
@@ -297,5 +312,20 @@ fun CreateReminderScreen(
                 Text("Schedule Reminder", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
         }
+    }
+
+    if (activeTranscribeTarget != null) {
+        AudioTranscribeInputDialog(
+            fieldLabel = activeTranscribeTarget!!,
+            viewModel = viewModel,
+            onDismiss = { activeTranscribeTarget = null },
+            onTranscriptionConfirmed = { text ->
+                when (activeTranscribeTarget) {
+                    "Title" -> title = text
+                    "Description" -> description = text
+                }
+                activeTranscribeTarget = null
+            }
+        )
     }
 }

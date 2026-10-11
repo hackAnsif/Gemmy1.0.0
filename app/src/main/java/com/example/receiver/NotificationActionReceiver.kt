@@ -8,6 +8,7 @@ import com.example.GemmyApplication
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 class NotificationActionReceiver : BroadcastReceiver() {
 
@@ -24,36 +25,61 @@ class NotificationActionReceiver : BroadcastReceiver() {
         when (action) {
             ACTION_NOTIFICATION_COMPLETE -> {
                 if (id != -1L) {
-                    notificationManager.cancel(id.toInt())
+                    notificationManager.cancel((100_000 + id).toInt())
+                    val pendingResult = goAsync()
                     CoroutineScope(Dispatchers.IO).launch {
-                        repository.markReminderCompleted(id)
+                        try {
+                            repository.markReminderCompleted(id)
+                        } finally {
+                            pendingResult.finish()
+                        }
                     }
                 }
             }
             ACTION_NOTIFICATION_SNOOZE -> {
                 if (id != -1L) {
-                    notificationManager.cancel(id.toInt())
-                    notificationManager.cancel((250_000 + id).toInt())
-                    notificationManager.cancel((300_000 + id).toInt())
+                    when (type) {
+                        "review" -> notificationManager.cancel((300_000 + id).toInt())
+                        "alarm" -> notificationManager.cancel((200_000 + id).toInt())
+                        else -> notificationManager.cancel((100_000 + id).toInt())
+                    }
 
+                    val pendingResult = goAsync()
                     CoroutineScope(Dispatchers.IO).launch {
-                        if (type == "review") {
-                            // Snooze review by 1 hour
-                            val snoozeTime = System.currentTimeMillis() + 3600_000L
-                            val item = repository.getLearningItemById(id)
-                            if (item != null) {
-                                val updated = item.copy(nextReviewEpochMs = snoozeTime)
-                                repository.updateLearningItem(updated)
-                                scheduler.scheduleReview(updated)
+                        try {
+                            when (type) {
+                                "review" -> {
+                                    // Snooze review by 1 hour
+                                    val snoozeTime = System.currentTimeMillis() + 3600_000L
+                                    val item = repository.getLearningItemById(id)
+                                    if (item != null) {
+                                        val updated = item.copy(nextReviewEpochMs = snoozeTime)
+                                        repository.updateLearningItem(updated)
+                                    }
+                                }
+                                "alarm" -> {
+                                    // Snooze alarm by 10 minutes
+                                    val cal = Calendar.getInstance().apply {
+                                        add(Calendar.MINUTE, 10)
+                                    }
+                                    val alarm = app.database.alarmItemDao().getAlarmById(id)
+                                    if (alarm != null) {
+                                        val snoozedAlarm = alarm.copy(
+                                            hour = cal.get(Calendar.HOUR_OF_DAY),
+                                            minute = cal.get(Calendar.MINUTE),
+                                            isEnabled = true
+                                        )
+                                        scheduler.scheduleAlarm(snoozedAlarm)
+                                    }
+                                }
+                                else -> {
+                                    // Snooze reminder by 10 minutes
+                                    val snoozeTime = System.currentTimeMillis() + 600_000L
+                                    repository.snoozeReminder(id, snoozeTime)
+                                }
                             }
-                        } else {
-                            // Snooze reminder by 10 minutes
-                            val snoozeTime = System.currentTimeMillis() + 600_000L
-                            repository.snoozeReminder(id, snoozeTime)
-                            val reminder = repository.getReminderById(id)
-                            if (reminder != null) {
-                                scheduler.scheduleReminder(reminder.copy(dueTimeEpochMs = snoozeTime, isSnoozed = true, snoozeUntilEpochMs = snoozeTime))
-                            }
+                        } finally {
+                            pendingResult.finish()
                         }
                     }
                 }
