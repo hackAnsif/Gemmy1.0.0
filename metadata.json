@@ -1,0 +1,6 @@
+{
+  "name": "Gemmy",
+  "description": "Smart Memory & Reminder Assistant with voice input, learning cards, spaced-repetition, alarms, notifications, and home screen widget.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

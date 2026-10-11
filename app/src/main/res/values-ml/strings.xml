@@ -1,0 +1,80 @@
+<resources>
+    <string name="app_name">ജെമ്മി</string>
+    <string name="app_full_name">ജെമ്മി — സ്മാർട്ട് മെമ്മറി &amp; റിമൈൻഡർ അസിസ്റ്റന്റ്</string>
+    <string name="widget_description">ജെമ്മി അസിസ്റ്റന്റ് &amp; റിമൈൻഡർ വിജറ്റ്</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">ഹോം</string>
+    <string name="nav_library">ലൈബ്രറി</string>
+    <string name="nav_reminders">റിമൈൻഡറുകൾ</string>
+    <string name="nav_alarms">അലാറങ്ങൾ</string>
+    <string name="nav_settings">സെറ്റിംഗ്സ്</string>
+
+    <!-- Greetings -->
+    <string name="greeting_morning">സുപ്രഭാതം!</string>
+    <string name="greeting_afternoon">ശുഭ ഉച്ചതിരിഞ്ഞ്!</string>
+    <string name="greeting_evening">ശുഭ സായാഹ്നം!</string>
+    <string name="greeting_night">ശുഭ രാത്രി!</string>
+    <string name="gemmy_prompt">ഇന്ന് ഞാൻ എന്താണ് ഓർമ്മിപ്പിക്കേണ്ടത്?</string>
+
+    <!-- Assistant Card -->
+    <string name="action_speak">സംസാരിക്കാൻ ടാപ്പ് ചെയ്യുക</string>
+    <string name="action_listening">ശ്രദ്ധിക്കുന്നു...</string>
+    <string name="action_quick_reminder">റിമൈൻഡർ ഉണ്ടാക്കുക</string>
+    <string name="action_quick_alarm">അലാറം വെക്കുക</string>
+    <string name="action_quick_learn">പഠന കുറിപ്പ് ചേർക്കുക</string>
+
+    <!-- Sections -->
+    <string name="section_today">ഇന്നത്തെ ഷെഡ്യൂൾ</string>
+    <string name="section_upcoming">വരാനിരിക്കുന്നവ</string>
+    <string name="section_learning_stats">പഠന പുരോഗതി</string>
+    <string name="section_due_review">ഇന്ന് റിവൈസ് ചെയ്യേണ്ടവ</string>
+
+    <!-- Stats -->
+    <string name="stat_total_learned">സംരക്ഷിച്ചവ</string>
+    <string name="stat_due_today">ഇന്നത്തെ റിവിഷൻ</string>
+    <string name="stat_reviewed_today">ഇന്ന് പഠിച്ചവ</string>
+    <string name="stat_remembered">ഓർമ്മയിലുള്ളവ</string>
+    <string name="stat_streak">തുടർച്ച</string>
+
+    <!-- Recall buttons -->
+    <string name="recall_reveal">ഉത്തരം കാണിക്കുക</string>
+    <string name="recall_again">വീണ്ടും (മറന്നുപോയി)</string>
+    <string name="recall_hard">ബുദ്ധിമുട്ട് (ഓർക്കാൻ ശ്രമിച്ചു)</string>
+    <string name="recall_good">നല്ലത് (ഓർമ്മയുണ്ട്)</string>
+    <string name="recall_easy">എളുപ്പം (വ്യക്തമായി ഓർമ്മയുണ്ട്)</string>
+
+    <!-- Common Actions -->
+    <string name="action_save">സംരക്ഷിക്കുക</string>
+    <string name="action_cancel">റദ്ദാക്കുക</string>
+    <string name="action_delete">മായ്ക്കുക</string>
+    <string name="action_edit">തിരുത്തുക</string>
+    <string name="action_confirm">സ്ഥിരീകരിക്കുക</string>
+    <string name="action_snooze">സ്നൂസ് ചെയ്യുക</string>
+    <string name="action_dismiss">ഒഴിവാക്കുക</string>
+    <string name="action_complete">പൂർത്തിയായി</string>
+    <string name="action_review_now">ഇപ്പോൾ റിവൈസ് ചെയ്യുക</string>
+    <string name="action_close">അടയ്ക്കുക</string>
+    <string name="action_export">ബാക്കപ്പ് എടുക്കുക</string>
+    <string name="action_import">ഡാറ്റ ചേർക്കുക</string>
+    <string name="action_clear_all">എല്ലാം മായ്ക്കുക</string>
+
+    <!-- Form Labels -->
+    <string name="label_title">തലക്കെട്ട് / വാക്ക് / ആശയം</string>
+    <string name="label_meaning">അർത്ഥം / വിവരണം / ഫോർമുല</string>
+    <string name="label_example">ഉദാഹരണ വാക്യം</string>
+    <string name="label_notes">കൂടുതൽ കുറിപ്പുകൾ</string>
+    <string name="label_category">വിഭാഗം</string>
+    <string name="label_language">ഭാഷ</string>
+    <string name="label_tags">ടാഗുകൾ</string>
+    <string name="label_date">തീയതി</string>
+    <string name="label_time">സമയം</string>
+    <string name="label_repeat">ആവർത്തനം</string>
+    <string name="label_priority">പ്രാധാന്യം</string>
+    <string name="label_spaced_rep">സ്പേസ്ഡ് റിവിഷൻ</string>
+
+    <!-- Notifications -->
+    <string name="notif_channel_reminders">ജെമ്മി റിമൈൻഡറുകൾ</string>
+    <string name="notif_channel_reviews">പഠന റിവിഷനുകൾ</string>
+    <string name="notif_channel_alarms">അലാറങ്ങൾ</string>
+</resources>

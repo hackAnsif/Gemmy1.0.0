@@ -1,0 +1,80 @@
+<resources>
+    <string name="app_name">Gemmy</string>
+    <string name="app_full_name">Gemmy — Smart Memory &amp; Reminder Assistant</string>
+    <string name="widget_description">Gemmy Assistant &amp; Reminders widget</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_library">Library</string>
+    <string name="nav_reminders">Reminders</string>
+    <string name="nav_alarms">Alarms</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Greetings -->
+    <string name="greeting_morning">Good morning!</string>
+    <string name="greeting_afternoon">Good afternoon!</string>
+    <string name="greeting_evening">Good evening!</string>
+    <string name="greeting_night">Good night!</string>
+    <string name="gemmy_prompt">What should I help you remember today?</string>
+
+    <!-- Assistant Card -->
+    <string name="action_speak">Tap to Speak</string>
+    <string name="action_listening">Listening to you...</string>
+    <string name="action_quick_reminder">Quick Reminder</string>
+    <string name="action_quick_alarm">Set Alarm</string>
+    <string name="action_quick_learn">Add Memory Item</string>
+
+    <!-- Sections -->
+    <string name="section_today">Today\'s Schedule</string>
+    <string name="section_upcoming">Upcoming Reminders</string>
+    <string name="section_learning_stats">Learning Memory Progress</string>
+    <string name="section_due_review">Due for Review</string>
+
+    <!-- Stats -->
+    <string name="stat_total_learned">Saved Items</string>
+    <string name="stat_due_today">Due Today</string>
+    <string name="stat_reviewed_today">Reviewed Today</string>
+    <string name="stat_remembered">Remembered</string>
+    <string name="stat_streak">Streak</string>
+
+    <!-- Recall buttons -->
+    <string name="recall_reveal">Reveal Answer</string>
+    <string name="recall_again">Again (Forgot)</string>
+    <string name="recall_hard">Hard (Difficult)</string>
+    <string name="recall_good">Good (Remembered)</string>
+    <string name="recall_easy">Easy (Confident)</string>
+
+    <!-- Common Actions -->
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_confirm">Confirm</string>
+    <string name="action_snooze">Snooze</string>
+    <string name="action_dismiss">Dismiss</string>
+    <string name="action_complete">Mark Complete</string>
+    <string name="action_review_now">Review Now</string>
+    <string name="action_close">Close</string>
+    <string name="action_export">Export Data</string>
+    <string name="action_import">Import Data</string>
+    <string name="action_clear_all">Clear All Data</string>
+
+    <!-- Form Labels -->
+    <string name="label_title">Title / Term / Concept</string>
+    <string name="label_meaning">Meaning / Explanation / Formula</string>
+    <string name="label_example">Example Sentence / Context</string>
+    <string name="label_notes">Additional Notes</string>
+    <string name="label_category">Category</string>
+    <string name="label_language">Language</string>
+    <string name="label_tags">Tags (comma separated)</string>
+    <string name="label_date">Date</string>
+    <string name="label_time">Time</string>
+    <string name="label_repeat">Repeat</string>
+    <string name="label_priority">Priority</string>
+    <string name="label_spaced_rep">Smart Spaced-Repetition</string>
+
+    <!-- Notifications -->
+    <string name="notif_channel_reminders">Gemmy Reminders</string>
+    <string name="notif_channel_reviews">Learning Reviews</string>
+    <string name="notif_channel_alarms">Alarms</string>
+</resources>
