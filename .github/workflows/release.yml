@@ -1,0 +1,152 @@
+name: Build and Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Publish as a GitHub Release'
+        required: true
+        type: boolean
+        default: true
+      release_tag:
+        description: 'Custom tag name for release (e.g. v1.0.0)'
+        required: false
+        type: string
+        default: ''
+      release_title:
+        description: 'Release title (e.g. Gemmy v1.0.0)'
+        required: false
+        type: string
+        default: ''
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant Execute Permission to gradlew
+        run: chmod +x gradlew
+
+      - name: Prepare Environment (.env)
+        run: |
+          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
+            echo "Configured .env from GEMINI_API_KEY GitHub Secret."
+          elif [ -f .env.example ]; then
+            cp .env.example .env
+            echo "Copied .env.example to .env."
+          else
+            touch .env
+            echo "Created empty .env."
+          fi
+
+      - name: Configure Keystore & Signing
+        run: |
+          if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
+            echo "Decoding release keystore from GitHub Secret..."
+            echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > "${{ github.workspace }}/my-upload-key.jks"
+            echo "KEYSTORE_PATH=${{ github.workspace }}/my-upload-key.jks" >> $GITHUB_ENV
+            echo "STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
+            echo "Using custom release keystore."
+          else
+            echo "No custom release keystore secret found. Generating CI release signing keystore..."
+            keytool -genkeypair -v \
+              -keystore "${{ github.workspace }}/my-upload-key.jks" \
+              -alias upload \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Gemmy, OU=Mobile, O=AIStudio, L=Mountain View, S=CA, C=US"
+            echo "KEYSTORE_PATH=${{ github.workspace }}/my-upload-key.jks" >> $GITHUB_ENV
+            echo "STORE_PASSWORD=android" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=android" >> $GITHUB_ENV
+            echo "CI release signing keystore generated successfully."
+          fi
+
+      - name: Run Unit Tests
+        run: ./gradlew testDebugUnitTest
+
+      - name: Build Release and Debug APKs
+        run: ./gradlew assembleRelease assembleDebug
+
+      - name: Prepare APK Artifacts
+        id: prepare_apks
+        run: |
+          mkdir -p release-apks
+          
+          # Determine version label
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION_TAG="${GITHUB_REF#refs/tags/}"
+          elif [ -n "${{ inputs.release_tag }}" ]; then
+            VERSION_TAG="${{ inputs.release_tag }}"
+          else
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            VERSION_TAG="v1.0-${SHORT_SHA}"
+          fi
+          
+          echo "VERSION_TAG=${VERSION_TAG}" >> $GITHUB_OUTPUT
+          echo "Version label: ${VERSION_TAG}"
+          
+          # Copy and rename APKs
+          if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
+            cp "app/build/outputs/apk/release/app-release.apk" "release-apks/Gemmy-${VERSION_TAG}-release.apk"
+          fi
+          
+          if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+            cp "app/build/outputs/apk/debug/app-debug.apk" "release-apks/Gemmy-${VERSION_TAG}-debug.apk"
+          fi
+          
+          ls -la release-apks/
+
+      - name: Upload APKs as Workflow Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gemmy-APKs-${{ steps.prepare_apks.outputs.VERSION_TAG }}
+          path: release-apks/*.apk
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: |
+          startsWith(github.ref, 'refs/tags/v') ||
+          (github.event_name == 'workflow_dispatch' && inputs.create_release == true)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.prepare_apks.outputs.VERSION_TAG }}
+          name: ${{ inputs.release_title != '' && inputs.release_title || format('Gemmy {0}', steps.prepare_apks.outputs.VERSION_TAG) }}
+          files: release-apks/*.apk
+          generate_release_notes: true
+          prerelease: ${{ inputs.prerelease || false }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
