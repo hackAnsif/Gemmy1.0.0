@@ -45,10 +45,13 @@ jobs:
           fetch-depth: 0
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '21'
+
+      - name: Suppress Non-Fatal Java Problem Matcher
+        run: echo "::remove-matcher owner=java::"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -69,8 +72,23 @@ jobs:
             echo "Created empty .env."
           fi
 
-      - name: Configure Keystore & Signing
+      - name: Configure Keystores & Signing
         run: |
+          # 1. Ensure debug.keystore exists (required by debugConfig in build.gradle.kts)
+          if [ ! -f "${{ github.workspace }}/debug.keystore" ]; then
+            echo "Generating CI debug keystore..."
+            keytool -genkeypair -v \
+              -keystore "${{ github.workspace }}/debug.keystore" \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug, O=Android, C=US"
+          fi
+
+          # 2. Ensure release keystore exists (required by release signingConfig in build.gradle.kts)
           if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
             echo "Decoding release keystore from GitHub Secret..."
             echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > "${{ github.workspace }}/my-upload-key.jks"
@@ -96,10 +114,14 @@ jobs:
           fi
 
       - name: Run Unit Tests
-        run: ./gradlew testDebugUnitTest
+        run: ./gradlew testDebugUnitTest -Didea.headless=true
 
       - name: Build Release and Debug APKs
-        run: ./gradlew assembleRelease assembleDebug
+        run: ./gradlew assembleRelease assembleDebug -Didea.headless=true
+        env:
+          KEYSTORE_PATH: ${{ env.KEYSTORE_PATH }}
+          STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
 
       - name: Prepare APK Artifacts
         id: prepare_apks

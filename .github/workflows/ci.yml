@@ -19,10 +19,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '21'
+
+      - name: Suppress Non-Fatal Java Problem Matcher
+        run: echo "::remove-matcher owner=java::"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -38,8 +41,23 @@ jobs:
             touch .env
           fi
 
+      - name: Configure Debug Keystore
+        run: |
+          if [ ! -f "${{ github.workspace }}/debug.keystore" ]; then
+            echo "Generating CI debug keystore..."
+            keytool -genkeypair -v \
+              -keystore "${{ github.workspace }}/debug.keystore" \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug, O=Android, C=US"
+          fi
+
       - name: Run Unit Tests
-        run: ./gradlew testDebugUnitTest
+        run: ./gradlew testDebugUnitTest -Didea.headless=true
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleDebug -Didea.headless=true
