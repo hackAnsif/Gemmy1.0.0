@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.BuildConfig
 import com.example.ai.GeminiApiService
 import com.example.data.model.AlarmItem
 import com.example.data.model.GemmyParsedAction
@@ -75,7 +76,26 @@ class GemmyViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "1,3,7,14,30")
 
     val hasSeenOnboarding: StateFlow<Boolean> = repository.preferencesRepository.hasSeenOnboarding
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), repository.preferencesRepository.hasSeenOnboardingSync())
+
+    val githubRepo: StateFlow<String> = repository.preferencesRepository.githubRepo
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    val autoCheckUpdates: StateFlow<Boolean> = repository.preferencesRepository.autoCheckUpdates
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    // Remote App Update UI State
+    private val _appUpdateInfo = MutableStateFlow<com.example.update.AppUpdateInfo?>(null)
+    val appUpdateInfo: StateFlow<com.example.update.AppUpdateInfo?> = _appUpdateInfo.asStateFlow()
+
+    private val _isCheckingUpdate = MutableStateFlow(false)
+    val isCheckingUpdate: StateFlow<Boolean> = _isCheckingUpdate.asStateFlow()
+
+    private val _updateDownloadProgress = MutableStateFlow<Float?>(null)
+    val updateDownloadProgress: StateFlow<Float?> = _updateDownloadProgress.asStateFlow()
+
+    private val _updateErrorMessage = MutableStateFlow<String?>(null)
+    val updateErrorMessage: StateFlow<String?> = _updateErrorMessage.asStateFlow()
 
     // Data lists
     val learningItems: StateFlow<List<LearningItem>> = repository.allLearningItems
@@ -265,6 +285,13 @@ class GemmyViewModel(
         viewModelScope.launch {
             repository.insertAlarm(alarm)
             showUserMessage("Alarm set for %02d:%02d".format(alarm.hour, alarm.minute))
+        }
+    }
+
+    fun updateAlarm(alarm: AlarmItem) {
+        viewModelScope.launch {
+            repository.updateAlarm(alarm)
+            showUserMessage("Alarm updated for %02d:%02d".format(alarm.hour, alarm.minute))
         }
     }
 
@@ -516,9 +543,14 @@ class GemmyViewModel(
                         processVoiceCommand(transcript)
                     }
                 } else {
+                    val keyConfigured = userApiKey.value.isNotBlank() || (BuildConfig.GEMINI_API_KEY.isNotBlank() && BuildConfig.GEMINI_API_KEY != "MY_GEMINI_API_KEY")
                     _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
                         isTranscribing = false,
-                        errorMessage = "Transcription returned an empty result. Ensure API key or network connection is active."
+                        errorMessage = if (!keyConfigured) {
+                            "Gemini API key is required for cloud audio transcription. Add your API key in Settings -> Gemini AI, or use the Voice Command tab for instant on-device recognition."
+                        } else {
+                            "Transcription returned empty. Please speak clearly into the microphone and ensure internet is connected."
+                        }
                     )
                 }
             } catch (e: Exception) {
@@ -568,6 +600,67 @@ class GemmyViewModel(
 
     fun updateDefaultSnooze(minutes: Int) {
         viewModelScope.launch { repository.preferencesRepository.setDefaultSnoozeMinutes(minutes) }
+    }
+
+    // App Update Handling
+    fun checkForAppUpdates(context: Context, manual: Boolean = false) {
+        viewModelScope.launch {
+            _isCheckingUpdate.value = true
+            _updateErrorMessage.value = null
+            val repo = githubRepo.value.ifBlank { com.example.update.AppUpdateManager.DEFAULT_REPO }
+            val info = com.example.update.AppUpdateManager.checkForUpdate(context, repo)
+            _isCheckingUpdate.value = false
+            if (info != null) {
+                if (info.isUpdateAvailable) {
+                    _appUpdateInfo.value = info
+                } else if (manual) {
+                    showUserMessage("Gemmy is up to date (version ${info.currentVersion})")
+                }
+            } else if (manual) {
+                showUserMessage("Could not check updates. Check repository ($repo) or network.")
+            }
+        }
+    }
+
+    fun downloadAndInstallUpdate(context: Context) {
+        val info = _appUpdateInfo.value ?: return
+        val url = info.downloadUrl ?: return
+        viewModelScope.launch {
+            _updateDownloadProgress.value = 0f
+            _updateErrorMessage.value = null
+            com.example.update.AppUpdateManager.downloadAndInstall(
+                context = context,
+                downloadUrl = url,
+                apkName = info.apkName,
+                onProgress = { progress ->
+                    _updateDownloadProgress.value = progress
+                },
+                onError = { err ->
+                    _updateDownloadProgress.value = null
+                    _updateErrorMessage.value = err
+                    showUserMessage("Update download failed: $err")
+                }
+            )
+        }
+    }
+
+    fun dismissUpdateDialog() {
+        _appUpdateInfo.value = null
+        _updateDownloadProgress.value = null
+        _updateErrorMessage.value = null
+    }
+
+    fun updateGithubRepo(repo: String) {
+        viewModelScope.launch {
+            repository.preferencesRepository.setGithubRepo(repo)
+            showUserMessage("GitHub repository set: $repo")
+        }
+    }
+
+    fun updateAutoCheckUpdates(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.preferencesRepository.setAutoCheckUpdates(enabled)
+        }
     }
 
     // Backup & Restore

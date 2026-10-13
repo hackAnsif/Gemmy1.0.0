@@ -25,7 +25,10 @@ jobs:
           java-version: '21'
 
       - name: Suppress Non-Fatal Java Problem Matcher
-        run: echo "::remove-matcher owner=java::"
+        run: |
+          echo "::remove-matcher owner=java::"
+          echo "::remove-matcher owner=javac::"
+          echo "::remove-matcher owner=sub-java::"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4

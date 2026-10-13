@@ -15,5 +15,7 @@ data class AlarmItem(
     val daysOfWeek: String = "", // e.g. "1,2,3,4,5" (1=Monday, 7=Sunday)
     val vibrateEnabled: Boolean = true,
     val snoozeMinutes: Int = 10,
+    val toneTitle: String = "Default Alarm Tone",
+    val toneUri: String = "", // empty = system alarm sound
     val createdAtEpochMs: Long = System.currentTimeMillis()
 )

@@ -224,6 +224,141 @@ fun SettingsScreen(
                 }
             }
 
+            // App Updates & GitHub Automation
+            val githubRepo by viewModel.githubRepo.collectAsStateWithLifecycle()
+            val autoCheckUpdates by viewModel.autoCheckUpdates.collectAsStateWithLifecycle()
+            val isCheckingUpdate by viewModel.isCheckingUpdate.collectAsStateWithLifecycle()
+            val appUpdateInfo by viewModel.appUpdateInfo.collectAsStateWithLifecycle()
+            val downloadProgress by viewModel.updateDownloadProgress.collectAsStateWithLifecycle()
+            var repoInput by remember(githubRepo) { mutableStateOf(githubRepo) }
+
+            SettingsGroupCard(title = "App Updates & Remote Updation", icon = Icons.Default.CloudDownload) {
+                Text(
+                    text = "Installed Version: v${com.example.BuildConfig.VERSION_NAME} (Build ${com.example.BuildConfig.VERSION_CODE})",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = GemmyIndigoPrimary
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "When you push code or releases to GitHub, Gemmy automatically detects the newest APK and offers a one-tap in-app update.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = repoInput,
+                    onValueChange = { repoInput = it },
+                    label = { Text("GitHub Repo (e.g. username/gemmy)") },
+                    placeholder = { Text(com.example.update.AppUpdateManager.DEFAULT_REPO) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = {
+                            viewModel.updateGithubRepo(repoInput.trim())
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = GemmyIndigoPrimary)
+                    ) {
+                        Text("Save Repo")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.checkForAppUpdates(context, manual = true)
+                        },
+                        enabled = !isCheckingUpdate
+                    ) {
+                        if (isCheckingUpdate) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = GemmyIndigoPrimary
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Checking...")
+                        } else {
+                            Text("Check Updates")
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Auto-check on app launch",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Switch(
+                        checked = autoCheckUpdates,
+                        onCheckedChange = { viewModel.updateAutoCheckUpdates(it) }
+                    )
+                }
+
+                // If an update is ready
+                if (appUpdateInfo != null && appUpdateInfo!!.isUpdateAvailable) {
+                    val info = appUpdateInfo!!
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = GemmyIndigoPrimary.copy(alpha = 0.12f)),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text(
+                                text = "🎉 Update Ready: ${info.versionTag}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = GemmyIndigoPrimary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = info.releaseNotes.ifBlank { "New features and performance improvements." },
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 4
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            if (downloadProgress != null) {
+                                androidx.compose.material3.LinearProgressIndicator(
+                                    progress = { downloadProgress!! },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Downloading APK: ${(downloadProgress!! * 100).toInt()}%",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = GemmyIndigoPrimary
+                                )
+                            } else {
+                                Button(
+                                    onClick = { viewModel.downloadAndInstallUpdate(context) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = GemmyIndigoPrimary),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Download & Install Update")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Data Backup & Privacy
             SettingsGroupCard(title = "Data & Backup Management", icon = Icons.Default.Lock) {
                 Row(

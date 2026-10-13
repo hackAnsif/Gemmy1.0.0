@@ -15,6 +15,8 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "ge
 
 class UserPreferencesRepository(private val context: Context) {
 
+    private val fastPrefs = context.getSharedPreferences("gemmy_fast_prefs", Context.MODE_PRIVATE)
+
     private object PreferencesKeys {
         val THEME_MODE = stringPreferencesKey("theme_mode") // SYSTEM, LIGHT, DARK
         val APP_LANGUAGE = stringPreferencesKey("app_language") // en, ml
@@ -25,6 +27,16 @@ class UserPreferencesRepository(private val context: Context) {
         val SOUND_ENABLED = booleanPreferencesKey("sound_enabled")
         val VIBRATE_ENABLED = booleanPreferencesKey("vibrate_enabled")
         val HAS_SEEN_ONBOARDING = booleanPreferencesKey("has_seen_onboarding")
+        val GITHUB_REPO = stringPreferencesKey("github_repo") // owner/repo format e.g. "username/repository"
+        val AUTO_CHECK_UPDATES = booleanPreferencesKey("auto_check_updates")
+    }
+
+    /**
+     * Synchronous check on cold start to immediately know if onboarding was completed,
+     * avoiding the initial StateFlow `false` flicker on every app open.
+     */
+    fun hasSeenOnboardingSync(): Boolean {
+        return fastPrefs.getBoolean("has_seen_onboarding", false)
     }
 
     val themeMode: Flow<String> = context.dataStore.data.map { preferences ->
@@ -60,7 +72,15 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     val hasSeenOnboarding: Flow<Boolean> = context.dataStore.data.map { preferences ->
-        preferences[PreferencesKeys.HAS_SEEN_ONBOARDING] ?: false
+        preferences[PreferencesKeys.HAS_SEEN_ONBOARDING] ?: fastPrefs.getBoolean("has_seen_onboarding", false)
+    }
+
+    val githubRepo: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.GITHUB_REPO] ?: ""
+    }
+
+    val autoCheckUpdates: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.AUTO_CHECK_UPDATES] ?: true
     }
 
     suspend fun setThemeMode(mode: String) {
@@ -96,6 +116,15 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     suspend fun setHasSeenOnboarding(seen: Boolean) {
+        fastPrefs.edit().putBoolean("has_seen_onboarding", seen).apply()
         context.dataStore.edit { it[PreferencesKeys.HAS_SEEN_ONBOARDING] = seen }
+    }
+
+    suspend fun setGithubRepo(repo: String) {
+        context.dataStore.edit { it[PreferencesKeys.GITHUB_REPO] = repo.trim() }
+    }
+
+    suspend fun setAutoCheckUpdates(enabled: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.AUTO_CHECK_UPDATES] = enabled }
     }
 }

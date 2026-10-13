@@ -69,7 +69,8 @@ class ReminderBroadcastReceiver : BroadcastReceiver() {
                 showReviewNotification(context, notificationManager, id, title, desc, category, soundEnabled, vibrateEnabled)
             }
             ACTION_FIRE_ALARM -> {
-                showAlarmNotification(context, notificationManager, id, title, desc, vibrateEnabled)
+                val toneUri = intent.getStringExtra(EXTRA_TONE_URI) ?: ""
+                showAlarmNotification(context, notificationManager, id, title, desc, vibrateEnabled, toneUri)
 
                 // For one-time alarms, update enabled status to false in DB
                 if (id != -1L) {
@@ -220,7 +221,8 @@ class ReminderBroadcastReceiver : BroadcastReceiver() {
         id: Long,
         title: String,
         desc: String,
-        vibrateEnabled: Boolean
+        vibrateEnabled: Boolean,
+        toneUriStr: String = ""
     ) {
         val openIntent = Intent(context, MainActivity::class.java).apply {
             data = Uri.parse("gemmy://open/alarm/$id")
@@ -261,7 +263,15 @@ class ReminderBroadcastReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+        val alarmSound = if (toneUriStr.isNotBlank()) {
+            try {
+                Uri.parse(toneUriStr)
+            } catch (e: Exception) {
+                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            }
+        } else {
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+        }
 
         val builder = NotificationCompat.Builder(context, GemmyApplication.CHANNEL_ALARMS)
             .setSmallIcon(R.drawable.ic_bell_white)
@@ -296,6 +306,8 @@ class ReminderBroadcastReceiver : BroadcastReceiver() {
         const val EXTRA_SOUND = "extra_sound"
         const val EXTRA_VIBRATE = "extra_vibrate"
         const val EXTRA_SNOOZE_MINS = "extra_snooze_mins"
+        const val EXTRA_TONE_URI = "extra_tone_uri"
+        const val EXTRA_TONE_TITLE = "extra_tone_title"
 
         fun calculateNextOccurrence(dueEpochMs: Long, repeat: RepeatSchedule): Long {
             val cal = Calendar.getInstance().apply {

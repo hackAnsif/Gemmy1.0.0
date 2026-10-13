@@ -3,29 +3,52 @@ package com.example.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.components.VoiceAssistantDialog
 import com.example.ui.screens.AddLearningScreen
@@ -37,6 +60,7 @@ import com.example.ui.screens.LibraryScreen
 import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.RemindersScreen
 import com.example.ui.screens.SettingsScreen
+import com.example.ui.theme.GemmyIndigoPrimary
 import com.example.ui.theme.GemmyTheme
 import com.example.ui.viewmodel.GemmyViewModel
 
@@ -47,10 +71,15 @@ fun GemmyApp(
     initialStartVoice: Boolean = false,
     initialTargetId: Long? = null
 ) {
+    val context = LocalContext.current
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val hasSeenOnboarding by viewModel.hasSeenOnboarding.collectAsStateWithLifecycle()
     val voiceState by viewModel.voiceState.collectAsStateWithLifecycle()
     val userMessage by viewModel.userMessage.collectAsStateWithLifecycle()
+
+    val autoCheckUpdates by viewModel.autoCheckUpdates.collectAsStateWithLifecycle()
+    val appUpdateInfo by viewModel.appUpdateInfo.collectAsStateWithLifecycle()
+    val downloadProgress by viewModel.updateDownloadProgress.collectAsStateWithLifecycle()
 
     val darkTheme = when (themeMode) {
         "LIGHT" -> false
@@ -58,11 +87,10 @@ fun GemmyApp(
         else -> isSystemInDarkTheme()
     }
 
-    var currentScreen by remember {
-        mutableStateOf(if (hasSeenOnboarding) initialDestination else "onboarding")
-    }
+    var currentScreen by remember { mutableStateOf(initialDestination) }
     var reviewTargetId by remember { mutableStateOf<Long?>(initialTargetId) }
     var showVoiceDialog by remember { mutableStateOf(initialStartVoice) }
+    var updateDialogDismissedByUser by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -85,6 +113,13 @@ fun GemmyApp(
         }
     }
 
+    // Auto-check for GitHub release updates on startup if enabled
+    LaunchedEffect(autoCheckUpdates) {
+        if (autoCheckUpdates) {
+            viewModel.checkForAppUpdates(context, manual = false)
+        }
+    }
+
     GemmyTheme(darkTheme = darkTheme) {
         // Back handler for sub-screens
         if (currentScreen in listOf("add_learning", "create_reminder", "review")) {
@@ -93,7 +128,8 @@ fun GemmyApp(
             }
         }
 
-        if (currentScreen == "onboarding") {
+        // Only show onboarding for true first-time use
+        if (!hasSeenOnboarding) {
             OnboardingScreen(
                 onFinish = {
                     viewModel.completeOnboarding()
@@ -209,6 +245,75 @@ fun GemmyApp(
                     onDismiss = {
                         showVoiceDialog = false
                         viewModel.dismissVoiceDialog()
+                    }
+                )
+            }
+
+            // Remote In-App Update Prompt Dialog
+            if (!updateDialogDismissedByUser && appUpdateInfo != null && appUpdateInfo!!.isUpdateAvailable) {
+                val update = appUpdateInfo!!
+                AlertDialog(
+                    onDismissRequest = {
+                        updateDialogDismissedByUser = true
+                    },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.CloudDownload,
+                            contentDescription = null,
+                            tint = GemmyIndigoPrimary,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    },
+                    title = {
+                        Text("New Version Available", fontWeight = FontWeight.Bold)
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                text = "A new version of Gemmy (${update.versionTag}) is available on GitHub!",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = update.releaseNotes.ifBlank { "Performance improvements and new features." },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            if (downloadProgress != null) {
+                                Spacer(modifier = Modifier.height(14.dp))
+                                LinearProgressIndicator(
+                                    progress = { downloadProgress!! },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Downloading APK: ${(downloadProgress!! * 100).toInt()}%",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = GemmyIndigoPrimary
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                viewModel.downloadAndInstallUpdate(context)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = GemmyIndigoPrimary)
+                        ) {
+                            Text("Download & Install")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                updateDialogDismissedByUser = true
+                            }
+                        ) {
+                            Text("Later")
+                        }
                     }
                 )
             }

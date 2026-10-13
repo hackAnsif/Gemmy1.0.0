@@ -22,8 +22,8 @@ import java.util.concurrent.TimeUnit
 
 object GeminiApiService {
 
-    const val MODEL_TRANSCRIBE = "gemini-3.5-transcribe"
-    const val MODEL_TEXT_ANALYSIS = "gemini-3.8-flash"
+    const val MODEL_TRANSCRIBE = "gemini-3.5-flash"
+    const val MODEL_TEXT_ANALYSIS = "gemini-3.5-flash"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
@@ -67,7 +67,7 @@ object GeminiApiService {
 
         val base64Data = Base64.encodeToString(audioBytes, Base64.NO_WRAP)
 
-        // Try primary model: gemini-3.5-transcribe as requested
+        // Transcribe audio using official multimodal Gemini model (gemini-3.5-flash)
         val primaryResult = executeTranscriptionRequest(
             model = MODEL_TRANSCRIBE,
             base64Data = base64Data,
@@ -79,13 +79,8 @@ object GeminiApiService {
             return@withContext primaryResult
         }
 
-        Log.w("GeminiApi", "Primary model $MODEL_TRANSCRIBE returned null/error, attempting fallback with $MODEL_TEXT_ANALYSIS")
-        return@withContext executeTranscriptionRequest(
-            model = MODEL_TEXT_ANALYSIS,
-            base64Data = base64Data,
-            mimeType = mimeType,
-            apiKey = apiKey
-        )
+        Log.w("GeminiApi", "Model $MODEL_TRANSCRIBE returned null/error during audio transcription")
+        return@withContext null
     }
 
     private fun executeTranscriptionRequest(

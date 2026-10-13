@@ -64,7 +64,7 @@ class ExampleRobolectricTest {
 
     @Test
     fun testGeminiTranscriptionModelTarget() {
-        assertEquals("gemini-3.5-transcribe", com.example.ai.GeminiApiService.MODEL_TRANSCRIBE)
+        assertEquals("gemini-3.5-flash", com.example.ai.GeminiApiService.MODEL_TRANSCRIBE)
     }
 
     @Test

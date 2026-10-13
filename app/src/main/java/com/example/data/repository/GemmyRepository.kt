@@ -321,6 +321,8 @@ class GemmyRepository(
                 put("daysOfWeek", a.daysOfWeek)
                 put("vibrateEnabled", a.vibrateEnabled)
                 put("snoozeMinutes", a.snoozeMinutes)
+                put("toneTitle", a.toneTitle)
+                put("toneUri", a.toneUri)
                 put("createdAtEpochMs", a.createdAtEpochMs)
             }
             alarmArray.put(obj)
@@ -434,6 +436,8 @@ class GemmyRepository(
                         daysOfWeek = obj.optString("daysOfWeek", ""),
                         vibrateEnabled = obj.optBoolean("vibrateEnabled", true),
                         snoozeMinutes = obj.optInt("snoozeMinutes", 10),
+                        toneTitle = obj.optString("toneTitle", "Default Alarm Tone"),
+                        toneUri = obj.optString("toneUri", ""),
                         createdAtEpochMs = obj.optLong("createdAtEpochMs", System.currentTimeMillis())
                     )
                     insertAlarm(alarm)

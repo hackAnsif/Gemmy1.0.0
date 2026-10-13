@@ -37,6 +37,10 @@ jobs:
   build-and-release:
     name: Build & Release Android APK
     runs-on: ubuntu-latest
+    env:
+      KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+      STORE_PASSWORD: android
+      KEY_PASSWORD: android
 
     steps:
       - name: Checkout Code
@@ -50,8 +54,11 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Suppress Non-Fatal Java Problem Matcher
-        run: echo "::remove-matcher owner=java::"
+      - name: Suppress Non-Fatal Java Problem Matchers
+        run: |
+          echo "::remove-matcher owner=java::"
+          echo "::remove-matcher owner=javac::"
+          echo "::remove-matcher owner=sub-java::"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -88,16 +95,15 @@ jobs:
               -dname "CN=Android Debug, O=Android, C=US"
           fi
 
-          # 2. Ensure release keystore exists (required by release signingConfig in build.gradle.kts)
+          # 2. Configure release keystore
           if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
             echo "Decoding release keystore from GitHub Secret..."
             echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > "${{ github.workspace }}/my-upload-key.jks"
-            echo "KEYSTORE_PATH=${{ github.workspace }}/my-upload-key.jks" >> $GITHUB_ENV
             echo "STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
             echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
-            echo "Using custom release keystore."
-          else
-            echo "No custom release keystore secret found. Generating CI release signing keystore..."
+            echo "Using custom release keystore from secrets."
+          elif [ ! -f "${{ github.workspace }}/my-upload-key.jks" ]; then
+            echo "No repository release keystore found. Generating CI release signing keystore..."
             keytool -genkeypair -v \
               -keystore "${{ github.workspace }}/my-upload-key.jks" \
               -alias upload \
@@ -107,21 +113,16 @@ jobs:
               -storepass android \
               -keypass android \
               -dname "CN=Gemmy, OU=Mobile, O=AIStudio, L=Mountain View, S=CA, C=US"
-            echo "KEYSTORE_PATH=${{ github.workspace }}/my-upload-key.jks" >> $GITHUB_ENV
-            echo "STORE_PASSWORD=android" >> $GITHUB_ENV
-            echo "KEY_PASSWORD=android" >> $GITHUB_ENV
             echo "CI release signing keystore generated successfully."
+          else
+            echo "Using checked-in release signing keystore."
           fi
 
       - name: Run Unit Tests
-        run: ./gradlew testDebugUnitTest -Didea.headless=true
+        run: ./gradlew testDebugUnitTest --no-configuration-cache -Didea.headless=true
 
       - name: Build Release and Debug APKs
-        run: ./gradlew assembleRelease assembleDebug -Didea.headless=true
-        env:
-          KEYSTORE_PATH: ${{ env.KEYSTORE_PATH }}
-          STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
-          KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease assembleDebug --no-configuration-cache -Didea.headless=true
 
       - name: Prepare APK Artifacts
         id: prepare_apks
@@ -134,20 +135,22 @@ jobs:
           elif [ -n "${{ inputs.release_tag }}" ]; then
             VERSION_TAG="${{ inputs.release_tag }}"
           else
-            SHORT_SHA=$(git rev-parse --short HEAD)
+            SHORT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "latest")
             VERSION_TAG="v1.0-${SHORT_SHA}"
           fi
           
           echo "VERSION_TAG=${VERSION_TAG}" >> $GITHUB_OUTPUT
           echo "Version label: ${VERSION_TAG}"
           
-          # Copy and rename APKs
+          # Copy release and debug APKs
           if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
             cp "app/build/outputs/apk/release/app-release.apk" "release-apks/Gemmy-${VERSION_TAG}-release.apk"
+            cp "app/build/outputs/apk/release/app-release.apk" "release-apks/Gemmy-release.apk"
           fi
           
           if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
             cp "app/build/outputs/apk/debug/app-debug.apk" "release-apks/Gemmy-${VERSION_TAG}-debug.apk"
+            cp "app/build/outputs/apk/debug/app-debug.apk" "release-apks/Gemmy-debug.apk"
           fi
           
           ls -la release-apks/

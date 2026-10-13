@@ -119,6 +119,8 @@ class GemmyScheduler(private val context: Context) {
             putExtra(ReminderBroadcastReceiver.EXTRA_DESC, "Alarm set for %02d:%02d".format(alarm.hour, alarm.minute))
             putExtra(ReminderBroadcastReceiver.EXTRA_VIBRATE, alarm.vibrateEnabled)
             putExtra(ReminderBroadcastReceiver.EXTRA_SNOOZE_MINS, alarm.snoozeMinutes)
+            putExtra(ReminderBroadcastReceiver.EXTRA_TONE_URI, alarm.toneUri)
+            putExtra(ReminderBroadcastReceiver.EXTRA_TONE_TITLE, alarm.toneTitle)
         }
 
         val pendingIntent = PendingIntent.getBroadcast(

@@ -16,7 +16,7 @@ import com.example.data.model.ReviewLog
         AlarmItem::class,
         ReviewLog::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class GemmyDatabase : RoomDatabase() {
