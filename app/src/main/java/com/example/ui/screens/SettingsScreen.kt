@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Brightness4
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
@@ -39,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -72,12 +74,8 @@ fun SettingsScreen(
 
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
-    val userApiKey by viewModel.userApiKey.collectAsStateWithLifecycle()
-    val useOnlineAi by viewModel.useOnlineAi.collectAsStateWithLifecycle()
     val defaultSnooze by viewModel.defaultSnoozeMinutes.collectAsStateWithLifecycle()
     val smartIntervals by viewModel.smartReviewIntervals.collectAsStateWithLifecycle()
-
-    var apiKeyInput by remember(userApiKey) { mutableStateOf(userApiKey) }
     var showExportDialog by remember { mutableStateOf(false) }
     var exportedJsonText by remember { mutableStateOf("") }
     var showImportDialog by remember { mutableStateOf(false) }
@@ -153,60 +151,55 @@ fun SettingsScreen(
                 )
             }
 
-            // Gemini AI & Offline Mode
-            SettingsGroupCard(title = "Gemini AI & Offline Intelligence", icon = Icons.Default.Psychology) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            // Offline AI Neural Engine & Local Intelligence
+            SettingsGroupCard(title = "Offline AI Neural Engine", icon = Icons.Default.Psychology) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Use Online Gemini AI",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = GemmyIndigoPrimary,
+                            modifier = Modifier.size(24.dp)
                         )
-                        Text(
-                            text = "Improves multilingual & nuanced Malayalam voice commands. If off, Gemmy runs 100% offline rule-based parsing.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "100% On-Device AI Engine Active",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = "Zero internet required • Complete privacy • Local speech & intent parser",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
-                    Switch(
-                        checked = useOnlineAi,
-                        onCheckedChange = { viewModel.updateOnlineAi(it) }
-                    )
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                OutlinedTextField(
-                    value = apiKeyInput,
-                    onValueChange = { apiKeyInput = it },
-                    label = { Text("Custom Gemini API Key (Optional)") },
-                    placeholder = { Text("Auto-injected from AI Studio if empty") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("gemini_api_key_input"),
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp)
+                Text(
+                    text = "Supported Offline Voice Commands:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "• \"Set an alarm tomorrow 12:00 p.m.\"\n• \"Tomorrow I have to submit my assignment\"\n• \"Parents means someone who cares for family\"\n• \"Remind me to call parents tomorrow at 5 pm\"\n• \"Wake me up tomorrow at 7:00 am\"\n• \"നാളെ ഉച്ചയ്ക്ക് 12 മണിക്ക് അലാറം വെക്കണം\"",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Button(
-                        onClick = {
-                            viewModel.updateApiKey(apiKeyInput.trim())
-                            Toast.makeText(context, "API Key updated", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = GemmyIndigoPrimary)
-                    ) {
-                        Text("Save Key")
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -216,7 +209,7 @@ fun SettingsScreen(
                         Icon(imageVector = Icons.Default.Shield, contentDescription = null, tint = GemmyDarkSecondary, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Privacy first: Only voice command text is sent when AI is used. Your learning database is stored strictly on your device.",
+                            text = "Privacy first: All speech transcription, intent parsing, alarms, reminders, and learning cards run and stay 100% offline on your device.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

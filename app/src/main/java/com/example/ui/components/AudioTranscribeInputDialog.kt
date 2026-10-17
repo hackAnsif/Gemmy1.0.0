@@ -15,6 +15,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,15 +34,16 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +54,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -58,11 +62,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.theme.GemmyIndigoPrimary
 import com.example.ui.theme.GemmyVioletTertiary
 import com.example.ui.viewmodel.GemmyViewModel
+import com.example.voice.SpeechRecognitionHelper
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AudioTranscribeInputDialog(
     fieldLabel: String,
@@ -71,7 +76,6 @@ fun AudioTranscribeInputDialog(
     onTranscriptionConfirmed: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val audioState by viewModel.audioTranscriptionState.collectAsStateWithLifecycle()
 
     var hasMicPermission by remember {
         mutableStateOf(
@@ -88,16 +92,40 @@ fun AudioTranscribeInputDialog(
         hasMicPermission = isGranted
     }
 
+    var isListening by remember { mutableStateOf(false) }
     var editableText by remember { mutableStateOf("") }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+    var selectedLanguage by remember { mutableStateOf("en-IN") }
 
-    // When transcription finishes, pre-populate editable text
-    if (audioState.transcribedText.isNotBlank() && editableText.isBlank()) {
-        editableText = audioState.transcribedText
+    val speechHelper = remember {
+        SpeechRecognitionHelper(
+            context = context,
+            onListeningStateChanged = { listening ->
+                isListening = listening
+            },
+            onRmsChanged = {},
+            onPartialResult = { partial ->
+                editableText = partial
+            },
+            onResult = { text ->
+                editableText = text
+                statusMessage = null
+            },
+            onError = { error ->
+                statusMessage = error
+            }
+        )
     }
 
     DisposableEffect(Unit) {
         onDispose {
-            viewModel.cancelAudioRecording()
+            speechHelper.stopListening()
+        }
+    }
+
+    LaunchedEffect(hasMicPermission) {
+        if (hasMicPermission) {
+            speechHelper.startListening(selectedLanguage)
         }
     }
 
@@ -114,7 +142,7 @@ fun AudioTranscribeInputDialog(
 
     Dialog(
         onDismissRequest = {
-            viewModel.cancelAudioRecording()
+            speechHelper.stopListening()
             onDismiss()
         },
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -141,7 +169,7 @@ fun AudioTranscribeInputDialog(
                 ) {
                     Column {
                         Text(
-                            text = "Transcribe with Gemini",
+                            text = "Offline Voice Input",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -157,14 +185,19 @@ fun AudioTranscribeInputDialog(
                         color = MaterialTheme.colorScheme.primaryContainer
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(12.dp), tint = GemmyIndigoPrimary)
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp),
+                                tint = GemmyIndigoPrimary
+                            )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "gemini-3.5-transcribe",
-                                fontSize = 10.sp,
+                                text = "Offline AI Model",
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
@@ -172,14 +205,14 @@ fun AudioTranscribeInputDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 // Microphone Action Area
                 Box(
                     modifier = Modifier.size(90.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (audioState.isRecording) {
+                    if (isListening) {
                         Box(
                             modifier = Modifier
                                 .size(84.dp)
@@ -198,7 +231,7 @@ fun AudioTranscribeInputDialog(
                             .size(66.dp)
                             .background(
                                 Brush.linearGradient(
-                                    if (audioState.isRecording) listOf(Color(0xFFEF4444), Color(0xFFDC2626))
+                                    if (isListening) listOf(Color(0xFFEF4444), Color(0xFFDC2626))
                                     else listOf(GemmyVioletTertiary, GemmyIndigoPrimary)
                                 ),
                                 CircleShape
@@ -206,103 +239,91 @@ fun AudioTranscribeInputDialog(
                             .clickable {
                                 if (!hasMicPermission) {
                                     permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                } else if (audioState.isRecording) {
-                                    viewModel.stopAudioRecordingAndTranscribe(context) { transcript ->
-                                        editableText = transcript
-                                    }
-                                } else if (!audioState.isTranscribing) {
-                                    editableText = ""
-                                    viewModel.clearTranscribedText()
-                                    viewModel.startAudioRecording(context)
+                                } else if (isListening) {
+                                    speechHelper.stopListening()
+                                } else {
+                                    statusMessage = null
+                                    speechHelper.startListening(selectedLanguage)
                                 }
-                            },
+                            }
+                            .testTag("audio_transcribe_mic_button"),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (audioState.isTranscribing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(28.dp),
-                                color = Color.White,
-                                strokeWidth = 3.dp
-                            )
-                        } else if (audioState.isRecording) {
-                            Icon(
-                                imageVector = Icons.Default.Stop,
-                                contentDescription = "Stop",
-                                tint = Color.White,
-                                modifier = Modifier.size(32.dp)
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Mic,
-                                contentDescription = "Record",
-                                tint = Color.White,
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
+                        Icon(
+                            imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
+                            contentDescription = if (isListening) "Stop" else "Speak",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // Status text
-                if (audioState.isRecording) {
-                    val minutes = audioState.recordingDurationSec / 60
-                    val seconds = audioState.recordingDurationSec % 60
-                    Text(
-                        text = "Recording: %02d:%02d".format(minutes, seconds),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color(0xFFEF4444),
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Tap red square when finished",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else if (audioState.isTranscribing) {
-                    Text(
-                        text = "Transcribing with gemini-3.5-transcribe...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = GemmyIndigoPrimary
-                    )
-                } else {
-                    Text(
-                        text = if (!hasMicPermission) "Tap to grant microphone permission" else "Tap mic to speak",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Text(
-                        text = "Speaks in English or മലയാളം",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = when {
+                        !hasMicPermission -> "Tap microphone to grant permission"
+                        isListening -> "Listening... Speak naturally in English or മലയാളം"
+                        editableText.isNotBlank() -> "Speech transcribed! You can edit or use below."
+                        else -> "Tap microphone to dictate offline"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center
+                )
 
-                // Error message
-                if (audioState.errorMessage != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                if (statusMessage != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = audioState.errorMessage ?: "",
+                        text = statusMessage ?: "",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         textAlign = TextAlign.Center
                     )
                 }
 
-                // Transcribed text field for review/editing before insertion
-                if (editableText.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(14.dp))
-                    OutlinedTextField(
-                        value = editableText,
-                        onValueChange = { editableText = it },
-                        label = { Text("Transcribed Text (Edit if needed)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 4,
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Quick dictation chips
+                Text(
+                    text = "Or tap a quick phrase:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    listOf(
+                        "Submit my assignment",
+                        "Parents means loving family",
+                        "Study chapter 4",
+                        "Review formulas"
+                    ).forEach { chipText ->
+                        SuggestionChip(
+                            onClick = { editableText = chipText },
+                            label = { Text(chipText, fontSize = 11.sp) },
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Transcribed text field for review/editing before insertion
+                OutlinedTextField(
+                    value = editableText,
+                    onValueChange = { editableText = it },
+                    label = { Text("Transcribed Text") },
+                    placeholder = { Text("Dictated words will appear here...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 4,
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
 
                 // Dialog Action Buttons
                 Row(
@@ -311,7 +332,7 @@ fun AudioTranscribeInputDialog(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            viewModel.cancelAudioRecording()
+                            speechHelper.stopListening()
                             onDismiss()
                         },
                         modifier = Modifier.weight(1f),
@@ -326,7 +347,7 @@ fun AudioTranscribeInputDialog(
                         onClick = {
                             if (editableText.isNotBlank()) {
                                 onTranscriptionConfirmed(editableText)
-                                viewModel.cancelAudioRecording()
+                                speechHelper.stopListening()
                                 onDismiss()
                             }
                         },

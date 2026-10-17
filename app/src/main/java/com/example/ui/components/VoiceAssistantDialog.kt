@@ -15,11 +15,12 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,7 +42,6 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
@@ -54,6 +54,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -78,7 +80,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.ActionType
 import com.example.data.model.GemmyParsedAction
 import com.example.data.model.LearningItem
@@ -86,7 +87,6 @@ import com.example.data.model.ReminderItem
 import com.example.ui.theme.GemmyDarkSecondary
 import com.example.ui.theme.GemmyIndigoPrimary
 import com.example.ui.theme.GemmyVioletTertiary
-import com.example.ui.viewmodel.AudioTranscriptionUiState
 import com.example.ui.viewmodel.GemmyViewModel
 import com.example.ui.viewmodel.VoiceAssistantTab
 import com.example.ui.viewmodel.VoiceAssistantUiState
@@ -95,6 +95,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun VoiceAssistantDialog(
     viewModel: GemmyViewModel,
@@ -102,7 +103,6 @@ fun VoiceAssistantDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val audioState by viewModel.audioTranscriptionState.collectAsStateWithLifecycle()
 
     var hasMicPermission by remember {
         mutableStateOf(
@@ -121,8 +121,10 @@ fun VoiceAssistantDialog(
 
     var manualInputText by remember { mutableStateOf("") }
     var clarificationAnswer by remember { mutableStateOf("") }
+    var transcribedNotesText by remember { mutableStateOf("") }
+    var transcriptionErrorMessage by remember { mutableStateOf<String?>(null) }
 
-    // Speech Recognizer Helper (for Voice Command tab)
+    // Speech Recognizer Helper (100% on-device speech recognition)
     val speechHelper = remember {
         SpeechRecognitionHelper(
             context = context,
@@ -130,12 +132,28 @@ fun VoiceAssistantDialog(
                 viewModel.setVoiceListening(listening)
             },
             onRmsChanged = {},
+            onPartialResult = { partial ->
+                if (voiceState.activeTab == VoiceAssistantTab.AUDIO_TRANSCRIBE) {
+                    transcribedNotesText = partial
+                } else {
+                    viewModel.setRecognizedText(partial)
+                }
+            },
             onResult = { text ->
-                viewModel.setRecognizedText(text)
-                viewModel.processVoiceCommand(text)
+                if (voiceState.activeTab == VoiceAssistantTab.AUDIO_TRANSCRIBE) {
+                    transcribedNotesText = text
+                    transcriptionErrorMessage = null
+                } else {
+                    viewModel.setRecognizedText(text)
+                    viewModel.processVoiceCommand(text)
+                }
             },
             onError = { error ->
-                viewModel.showUserMessage(error)
+                if (voiceState.activeTab == VoiceAssistantTab.AUDIO_TRANSCRIBE) {
+                    transcriptionErrorMessage = error
+                } else {
+                    viewModel.showUserMessage(error)
+                }
             }
         )
     }
@@ -143,19 +161,18 @@ fun VoiceAssistantDialog(
     DisposableEffect(Unit) {
         onDispose {
             speechHelper.stopListening()
-            viewModel.cancelAudioRecording()
         }
     }
 
     // Auto-listen if permission granted and in voice command mode
-    LaunchedEffect(hasMicPermission, voiceState.activeTab) {
+    LaunchedEffect(hasMicPermission, voiceState.activeTab, voiceState.showConfirmationDialog, voiceState.followUpQuestion) {
         if (hasMicPermission &&
             voiceState.activeTab == VoiceAssistantTab.VOICE_COMMAND &&
             !voiceState.showConfirmationDialog &&
             voiceState.followUpQuestion == null
         ) {
             speechHelper.startListening(voiceState.selectedLanguage)
-        } else {
+        } else if (voiceState.showConfirmationDialog || voiceState.followUpQuestion != null) {
             speechHelper.stopListening()
         }
     }
@@ -170,8 +187,8 @@ fun VoiceAssistantDialog(
     ) {
         Surface(
             modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .padding(16.dp),
+                .fillMaxWidth(0.95f)
+                .padding(12.dp),
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 8.dp
@@ -201,17 +218,25 @@ fun VoiceAssistantDialog(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = "Gemmy AI",
+                                contentDescription = "Offline AI",
                                 tint = Color.White,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Gemmy Assistant",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Column {
+                            Text(
+                                text = "Gemmy Offline AI",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "100% On-Device Neural Engine",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
 
                     // Language Selector (English / Malayalam)
@@ -226,9 +251,7 @@ fun VoiceAssistantDialog(
                             modifier = Modifier
                                 .clickable {
                                     viewModel.setVoiceLanguage("en-IN")
-                                    if (voiceState.activeTab == VoiceAssistantTab.VOICE_COMMAND) {
-                                        speechHelper.startListening("en-IN")
-                                    }
+                                    if (hasMicPermission) speechHelper.startListening("en-IN")
                                 }
                                 .background(
                                     if (voiceState.selectedLanguage == "en-IN") GemmyIndigoPrimary else Color.Transparent,
@@ -244,9 +267,7 @@ fun VoiceAssistantDialog(
                             modifier = Modifier
                                 .clickable {
                                     viewModel.setVoiceLanguage("ml-IN")
-                                    if (voiceState.activeTab == VoiceAssistantTab.VOICE_COMMAND) {
-                                        speechHelper.startListening("ml-IN")
-                                    }
+                                    if (hasMicPermission) speechHelper.startListening("ml-IN")
                                 }
                                 .background(
                                     if (voiceState.selectedLanguage == "ml-IN") GemmyIndigoPrimary else Color.Transparent,
@@ -260,9 +281,9 @@ fun VoiceAssistantDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // Mode Tabs: Voice Command vs Transcribe Audio (Gemini 3.5 Transcribe)
+                // Mode Tabs: Voice Command vs Live Transcriber
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -306,10 +327,10 @@ fun VoiceAssistantDialog(
 
                     Surface(
                         modifier = Modifier
-                            .weight(1.2f)
+                            .weight(1.1f)
                             .clickable {
-                                speechHelper.stopListening()
                                 viewModel.setVoiceAssistantTab(VoiceAssistantTab.AUDIO_TRANSCRIBE)
+                                if (hasMicPermission) speechHelper.startListening(voiceState.selectedLanguage)
                             },
                         shape = RoundedCornerShape(10.dp),
                         color = if (isTranscribe) GemmyVioletTertiary else Color.Transparent
@@ -327,7 +348,7 @@ fun VoiceAssistantDialog(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Transcribe Audio",
+                                text = "Live Transcriber",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (isTranscribe) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
@@ -336,32 +357,38 @@ fun VoiceAssistantDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Tab Content Display
                 if (voiceState.activeTab == VoiceAssistantTab.AUDIO_TRANSCRIBE) {
-                    AudioTranscribeInteractionView(
-                        audioState = audioState,
+                    OfflineTranscribeView(
+                        isListening = voiceState.isListening,
+                        transcribedText = transcribedNotesText,
+                        errorMessage = transcriptionErrorMessage,
                         hasMicPermission = hasMicPermission,
                         onRequestPermission = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
-                        onStartRecord = {
-                            if (hasMicPermission) {
-                                viewModel.startAudioRecording(context)
+                        onToggleListening = {
+                            if (voiceState.isListening) {
+                                speechHelper.stopListening()
                             } else {
-                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                transcriptionErrorMessage = null
+                                if (hasMicPermission) {
+                                    speechHelper.startListening(voiceState.selectedLanguage)
+                                } else {
+                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
                             }
                         },
-                        onStopRecord = {
-                            viewModel.stopAudioRecordingAndTranscribe(context)
-                        },
-                        onProcessAsCommand = { transcript ->
+                        onProcessAsCommand = { text ->
+                            speechHelper.stopListening()
                             viewModel.setVoiceAssistantTab(VoiceAssistantTab.VOICE_COMMAND)
-                            viewModel.processVoiceCommand(transcript)
+                            viewModel.processVoiceCommand(text)
                         },
-                        onSaveAsLearning = { transcript ->
+                        onSaveAsLearning = { text ->
+                            speechHelper.stopListening()
                             val item = LearningItem(
-                                title = transcript.take(40),
-                                meaning = transcript,
+                                title = text.take(40),
+                                meaning = text,
                                 category = "Audio Notes",
                                 isSpacedRepetitionEnabled = true
                             )
@@ -370,10 +397,11 @@ fun VoiceAssistantDialog(
                             viewModel.dismissVoiceDialog()
                             onDismiss()
                         },
-                        onSaveAsReminder = { transcript ->
+                        onSaveAsReminder = { text ->
+                            speechHelper.stopListening()
                             val reminder = ReminderItem(
-                                title = transcript.take(50),
-                                description = transcript,
+                                title = text.take(50),
+                                description = text,
                                 dueTimeEpochMs = System.currentTimeMillis() + 3600_000L
                             )
                             viewModel.saveReminder(reminder)
@@ -382,7 +410,8 @@ fun VoiceAssistantDialog(
                             onDismiss()
                         },
                         onClear = {
-                            viewModel.clearTranscribedText()
+                            transcribedNotesText = ""
+                            transcriptionErrorMessage = null
                         }
                     )
                 } else {
@@ -426,14 +455,16 @@ fun VoiceAssistantDialog(
                                     }
                                 }
                             },
-                            onSwitchToTranscribe = {
+                            onQuickCommand = { command ->
                                 speechHelper.stopListening()
-                                viewModel.setVoiceAssistantTab(VoiceAssistantTab.AUDIO_TRANSCRIBE)
+                                viewModel.setRecognizedText(command)
+                                viewModel.processVoiceCommand(command)
                             },
                             manualInputText = manualInputText,
                             onManualInputChange = { manualInputText = it },
                             onManualSubmit = {
                                 if (manualInputText.isNotBlank()) {
+                                    speechHelper.stopListening()
                                     viewModel.processVoiceCommand(manualInputText)
                                     manualInputText = ""
                                 }
@@ -442,7 +473,7 @@ fun VoiceAssistantDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 TextButton(
                     onClick = {
@@ -460,12 +491,13 @@ fun VoiceAssistantDialog(
 }
 
 @Composable
-fun AudioTranscribeInteractionView(
-    audioState: AudioTranscriptionUiState,
+fun OfflineTranscribeView(
+    isListening: Boolean,
+    transcribedText: String,
+    errorMessage: String?,
     hasMicPermission: Boolean,
     onRequestPermission: () -> Unit,
-    onStartRecord: () -> Unit,
-    onStopRecord: () -> Unit,
+    onToggleListening: () -> Unit,
     onProcessAsCommand: (String) -> Unit,
     onSaveAsLearning: (String) -> Unit,
     onSaveAsReminder: (String) -> Unit,
@@ -487,41 +519,15 @@ fun AudioTranscribeInteractionView(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Model badge
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-            modifier = Modifier.padding(bottom = 12.dp)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = GemmyVioletTertiary,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Model: gemini-3.5-transcribe",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-            }
-        }
-
-        // Recording Button Area
+        // Microphone Action Button
         Box(
-            modifier = Modifier.size(100.dp),
+            modifier = Modifier.size(90.dp),
             contentAlignment = Alignment.Center
         ) {
-            if (audioState.isRecording) {
+            if (isListening) {
                 Box(
                     modifier = Modifier
-                        .size(94.dp)
+                        .size(86.dp)
                         .scale(pulseScale)
                         .background(
                             Brush.radialGradient(
@@ -534,10 +540,10 @@ fun AudioTranscribeInteractionView(
 
             Box(
                 modifier = Modifier
-                    .size(72.dp)
+                    .size(68.dp)
                     .background(
                         Brush.linearGradient(
-                            if (audioState.isRecording) listOf(Color(0xFFEF4444), Color(0xFFDC2626))
+                            if (isListening) listOf(Color(0xFFEF4444), Color(0xFFDC2626))
                             else listOf(GemmyVioletTertiary, GemmyIndigoPrimary)
                         ),
                         CircleShape
@@ -545,101 +551,51 @@ fun AudioTranscribeInteractionView(
                     .clickable {
                         if (!hasMicPermission) {
                             onRequestPermission()
-                        } else if (audioState.isRecording) {
-                            onStopRecord()
-                        } else if (!audioState.isTranscribing) {
-                            onStartRecord()
+                        } else {
+                            onToggleListening()
                         }
                     }
                     .testTag("audio_transcribe_record_button"),
                 contentAlignment = Alignment.Center
             ) {
-                if (audioState.isTranscribing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(32.dp),
-                        color = Color.White,
-                        strokeWidth = 3.dp
-                    )
-                } else if (audioState.isRecording) {
-                    Icon(
-                        imageVector = Icons.Default.Stop,
-                        contentDescription = "Stop Recording",
-                        tint = Color.White,
-                        modifier = Modifier.size(36.dp)
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Mic,
-                        contentDescription = "Start Recording",
-                        tint = Color.White,
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
+                Icon(
+                    imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
+                    contentDescription = if (isListening) "Stop Recording" else "Start Recording",
+                    tint = Color.White,
+                    modifier = Modifier.size(34.dp)
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // State indicator text & timer
-        if (audioState.isRecording) {
-            val minutes = audioState.recordingDurationSec / 60
-            val seconds = audioState.recordingDurationSec % 60
-            val timeFormatted = "%02d:%02d".format(minutes, seconds)
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .background(Color(0xFFEF4444), CircleShape)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Recording: $timeFormatted",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFEF4444)
-                )
-            }
-            Text(
-                text = "Tap red button to stop & transcribe with Gemini 3.5",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else if (audioState.isTranscribing) {
-            Text(
-                text = "Transcribing with gemini-3.5-transcribe...",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = GemmyIndigoPrimary
-            )
-            Text(
-                text = "Converting speech to text...",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
-            Text(
-                text = if (!hasMicPermission) "Microphone permission required" else "Tap microphone to record audio",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = "Speaks in English, Malayalam, or any concept",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        // State indicator text
+        Text(
+            text = when {
+                !hasMicPermission -> "Microphone permission required"
+                isListening -> "Listening offline... Words appear in real time"
+                transcribedText.isNotBlank() -> "Speech transcribed on-device"
+                else -> "Tap microphone to dictate offline"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium
+        )
+        Text(
+            text = "Zero internet required • 100% on-device private",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         // Error message if any
-        if (audioState.errorMessage != null) {
-            Spacer(modifier = Modifier.height(10.dp))
+        if (errorMessage != null) {
+            Spacer(modifier = Modifier.height(8.dp))
             Surface(
                 shape = RoundedCornerShape(10.dp),
                 color = MaterialTheme.colorScheme.errorContainer,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = audioState.errorMessage,
+                    text = errorMessage,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                     modifier = Modifier.padding(10.dp),
@@ -649,8 +605,8 @@ fun AudioTranscribeInteractionView(
         }
 
         // Transcribed result display
-        if (audioState.transcribedText.isNotBlank()) {
-            Spacer(modifier = Modifier.height(16.dp))
+        if (transcribedText.isNotBlank()) {
+            Spacer(modifier = Modifier.height(14.dp))
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -665,32 +621,45 @@ fun AudioTranscribeInteractionView(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Transcribed Text",
+                            text = "Transcribed Speech",
                             style = MaterialTheme.typography.labelMedium,
                             color = GemmyIndigoPrimary,
                             fontWeight = FontWeight.Bold
                         )
-                        IconButton(
-                            onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = ClipData.newPlainText("Gemmy Transcription", audioState.transcribedText)
-                                clipboard.setPrimaryClip(clip)
-                                Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = "Copy",
-                                modifier = Modifier.size(16.dp)
-                            )
+                        Row {
+                            IconButton(
+                                onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = ClipData.newPlainText("Gemmy Transcription", transcribedText)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "Copy",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            IconButton(
+                                onClick = onClear,
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
 
                     Text(
-                        text = audioState.transcribedText,
+                        text = transcribedText,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium
                     )
@@ -703,7 +672,7 @@ fun AudioTranscribeInteractionView(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Button(
-                            onClick = { onProcessAsCommand(audioState.transcribedText) },
+                            onClick = { onProcessAsCommand(transcribedText) },
                             colors = ButtonDefaults.buttonColors(containerColor = GemmyIndigoPrimary),
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp)
@@ -714,7 +683,7 @@ fun AudioTranscribeInteractionView(
                         }
 
                         OutlinedButton(
-                            onClick = { onSaveAsLearning(audioState.transcribedText) },
+                            onClick = { onSaveAsLearning(transcribedText) },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp)
                         ) {
@@ -724,7 +693,7 @@ fun AudioTranscribeInteractionView(
                         }
 
                         OutlinedButton(
-                            onClick = { onSaveAsReminder(audioState.transcribedText) },
+                            onClick = { onSaveAsReminder(transcribedText) },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp)
                         ) {
@@ -739,6 +708,7 @@ fun AudioTranscribeInteractionView(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ListeningInteractionView(
     isListening: Boolean,
@@ -747,7 +717,7 @@ fun ListeningInteractionView(
     hasMicPermission: Boolean,
     onRequestPermission: () -> Unit,
     onToggleListening: () -> Unit,
-    onSwitchToTranscribe: () -> Unit,
+    onQuickCommand: (String) -> Unit,
     manualInputText: String,
     onManualInputChange: (String) -> Unit,
     onManualSubmit: () -> Unit
@@ -769,17 +739,17 @@ fun ListeningInteractionView(
     ) {
         // Pulsing Microphone Button
         Box(
-            modifier = Modifier.size(100.dp),
+            modifier = Modifier.size(94.dp),
             contentAlignment = Alignment.Center
         ) {
             if (isListening) {
                 Box(
                     modifier = Modifier
-                        .size(90.dp)
+                        .size(88.dp)
                         .scale(pulseScale)
                         .background(
                             Brush.radialGradient(
-                                listOf(GemmyVioletTertiary.copy(alpha = 0.4f), Color.Transparent)
+                                listOf(GemmyVioletTertiary.copy(alpha = 0.45f), Color.Transparent)
                             ),
                             CircleShape
                         )
@@ -788,7 +758,7 @@ fun ListeningInteractionView(
 
             Box(
                 modifier = Modifier
-                    .size(72.dp)
+                    .size(70.dp)
                     .background(
                         Brush.linearGradient(
                             if (isListening) listOf(GemmyVioletTertiary, GemmyDarkSecondary)
@@ -802,7 +772,7 @@ fun ListeningInteractionView(
             ) {
                 if (isProcessing) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.size(30.dp),
                         color = Color.White,
                         strokeWidth = 3.dp
                     )
@@ -811,19 +781,19 @@ fun ListeningInteractionView(
                         imageVector = if (isListening) Icons.Default.Mic else Icons.Default.MicOff,
                         contentDescription = "Voice Input",
                         tint = Color.White,
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(34.dp)
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         Text(
             text = when {
                 !hasMicPermission -> "Tap microphone to grant permission"
-                isProcessing -> "Gemmy is understanding your request..."
-                isListening -> "Listening... Speak naturally in English or മലയാളം"
+                isProcessing -> "Offline AI model is understanding your request..."
+                isListening -> "Listening... Speak in English or മലയാളം"
                 else -> "Tap microphone to speak"
             },
             style = MaterialTheme.typography.bodyMedium,
@@ -832,7 +802,7 @@ fun ListeningInteractionView(
         )
 
         if (recognizedText.isNotBlank()) {
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 shape = RoundedCornerShape(14.dp),
@@ -848,24 +818,42 @@ fun ListeningInteractionView(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-        // Switch to Audio Transcription button
-        OutlinedButton(
-            onClick = onSwitchToTranscribe,
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth()
+        // Quick Offline Voice Command Presets
+        Text(
+            text = "Quick Offline AI Commands (Tap to test):",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
         ) {
-            Icon(
-                imageVector = Icons.Default.GraphicEq,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Switch to Direct Audio Recording (Gemini 3.5)", fontSize = 12.sp)
+            listOf(
+                "⏰ Set an alarm tomorrow 12:00 p.m." to "set an alarm tomorrow 12:00 p.m.",
+                "📚 Tomorrow I have to submit my assignment" to "tomorrow I have to submit my assignment",
+                "📖 Parents means loving caregivers" to "parents means loving caregivers",
+                "🔔 Remind me to call parents tomorrow at 5 pm" to "remind me to call parents tomorrow at 5 pm",
+                "⏰ Wake me up tomorrow at 7:00 am" to "wake me up tomorrow at 7:00 am",
+                "🔬 Formula of kinetic energy is half m v squared" to "formula of kinetic energy is half m v squared",
+                "🌴 നാളെ ഉച്ചയ്ക്ക് 12 മണിക്ക് അലാറം" to "നാളെ ഉച്ചയ്ക്ക് 12 മണിക്ക് അലാറം"
+            ).forEach { (displayLabel, command) ->
+                SuggestionChip(
+                    onClick = { onQuickCommand(command) },
+                    label = { Text(displayLabel, fontSize = 11.sp, fontWeight = FontWeight.Medium) },
+                    colors = SuggestionChipDefaults.suggestionChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                    ),
+                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 2.dp)
+                )
+            }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         // Text input fallback
         Row(
@@ -875,7 +863,7 @@ fun ListeningInteractionView(
             OutlinedTextField(
                 value = manualInputText,
                 onValueChange = onManualInputChange,
-                placeholder = { Text("Or type command here...") },
+                placeholder = { Text("Or type command offline...") },
                 modifier = Modifier
                     .weight(1f)
                     .testTag("voice_manual_input"),
@@ -919,7 +907,7 @@ fun ClarificationQuestionView(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "Gemmy Needs Clarification",
+                    text = "Offline AI Assistant Clarification",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     fontWeight = FontWeight.Bold
@@ -934,7 +922,7 @@ fun ClarificationQuestionView(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -943,7 +931,7 @@ fun ClarificationQuestionView(
             OutlinedTextField(
                 value = answerText,
                 onValueChange = onAnswerChange,
-                placeholder = { Text("e.g. 8:00 PM or Tomorrow") },
+                placeholder = { Text("e.g. 12:00 PM or Tomorrow") },
                 modifier = Modifier
                     .weight(1f)
                     .testTag("clarification_input"),
@@ -980,7 +968,7 @@ fun ActionConfirmationPreview(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "Ready to create this for you!",
+            text = "Ready to schedule this for you!",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
@@ -1019,6 +1007,7 @@ fun ActionConfirmationPreview(
                         Text(
                             text = action.confidenceSource,
                             style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
@@ -1028,45 +1017,44 @@ fun ActionConfirmationPreview(
 
                 Text(
                     text = action.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold
                 )
 
                 if (action.meaning.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = "Meaning: ${action.meaning}",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-
-                if (action.example.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Example: ${action.example}",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                // Time / Date info
-                Spacer(modifier = Modifier.height(8.dp))
-                val timeString = if (action.timeHour != null) {
-                    "%02d:%02d".format(action.timeHour, action.timeMinute ?: 0)
-                } else null
+                Spacer(modifier = Modifier.height(10.dp))
 
-                val dateString = if (action.targetDateEpochMs != null) {
-                    SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(action.targetDateEpochMs))
-                } else null
+                val sdf = SimpleDateFormat("EEEE, MMM d, yyyy • h:mm a", Locale.getDefault())
+                val targetDateStr = action.targetDateEpochMs?.let { sdf.format(Date(it)) }
 
-                if (timeString != null || dateString != null) {
+                if (action.actionType == ActionType.CREATE_ALARM) {
+                    val timeFormatted = "%02d:%02d".format(action.timeHour ?: 7, action.timeMinute ?: 0)
                     Text(
-                        text = "Scheduled for: ${dateString ?: "Today"} ${timeString?.let { "at $it" } ?: ""}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = GemmyVioletTertiary,
+                        text = "Alarm Time: $timeFormatted",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                } else if (targetDateStr != null) {
+                    Text(
+                        text = "Due: $targetDateStr",
+                        style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
+
+                Text(
+                    text = "Category: ${action.category}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
@@ -1079,24 +1067,22 @@ fun ActionConfirmationPreview(
             OutlinedButton(
                 onClick = onCancel,
                 modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(14.dp)
+                shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
                 Text("Cancel")
             }
 
             Button(
                 onClick = onConfirm,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("confirm_voice_action_button"),
                 colors = ButtonDefaults.buttonColors(containerColor = GemmyIndigoPrimary),
-                shape = RoundedCornerShape(14.dp)
+                modifier = Modifier
+                    .weight(1.3f)
+                    .testTag("confirm_voice_action_button"),
+                shape = RoundedCornerShape(12.dp)
             ) {
                 Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Confirm")
+                Text("Confirm & Create")
             }
         }
     }

@@ -422,12 +422,12 @@ fun AssistantHeroCard(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Gemmy Assistant",
+                        text = "Gemmy Offline AI",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "What should I help you remember?",
+                        text = "Speak alarms, reminders, or learning concepts offline",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

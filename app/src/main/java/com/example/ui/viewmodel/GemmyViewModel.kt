@@ -4,8 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.BuildConfig
-import com.example.ai.GeminiApiService
+import com.example.ai.OfflineAiEngine
 import com.example.data.model.AlarmItem
 import com.example.data.model.GemmyParsedAction
 import com.example.data.model.LearningItem
@@ -136,7 +135,7 @@ class GemmyViewModel(
     private val _voiceState = MutableStateFlow(VoiceAssistantUiState())
     val voiceState: StateFlow<VoiceAssistantUiState> = _voiceState.asStateFlow()
 
-    // Audio Transcription State (using model gemini-3.5-transcribe)
+    // Audio Transcription State (100% On-Device Offline Speech Recognition)
     private val _audioTranscriptionState = MutableStateFlow(AudioTranscriptionUiState())
     val audioTranscriptionState: StateFlow<AudioTranscriptionUiState> = _audioTranscriptionState.asStateFlow()
 
@@ -446,7 +445,7 @@ class GemmyViewModel(
         _voiceState.value = _voiceState.value.copy(activeTab = tab)
     }
 
-    // Audio Recording & Transcription (using model gemini-3.5-transcribe)
+    // Audio Recording & Transcription (100% On-Device Offline Engine)
     private var audioRecorderHelper: AudioRecorderHelper? = null
     private var recordingTimerJob: Job? = null
     private var amplitudeJob: Job? = null
@@ -498,6 +497,34 @@ class GemmyViewModel(
         }
     }
 
+    fun setTranscribedText(transcript: String, autoProcessAsCommand: Boolean = false) {
+        _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
+            isRecording = false,
+            isTranscribing = false,
+            transcribedText = transcript,
+            errorMessage = null
+        )
+        if (autoProcessAsCommand && transcript.isNotBlank()) {
+            _voiceState.value = _voiceState.value.copy(recognizedText = transcript)
+            processVoiceCommand(transcript)
+        }
+    }
+
+    fun setAudioTranscriptionError(error: String) {
+        _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
+            isRecording = false,
+            isTranscribing = false,
+            errorMessage = error
+        )
+    }
+
+    fun setAudioRecordingState(recording: Boolean) {
+        _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
+            isRecording = recording,
+            errorMessage = null
+        )
+    }
+
     fun stopAudioRecordingAndTranscribe(
         context: Context,
         autoProcessAsCommand: Boolean = false,
@@ -506,62 +533,18 @@ class GemmyViewModel(
         recordingTimerJob?.cancel()
         amplitudeJob?.cancel()
         val helper = audioRecorderHelper
-        val file = helper?.stopRecording() ?: currentRecordingFile
+        helper?.stopRecording()
 
+        val currentText = _audioTranscriptionState.value.transcribedText
         _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
             isRecording = false,
-            isTranscribing = true,
-            errorMessage = null
+            isTranscribing = false
         )
 
-        if (file == null || !file.exists() || file.length() == 0L) {
-            _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
-                isTranscribing = false,
-                errorMessage = "Audio recording was empty. Please hold or tap to record your voice."
-            )
-            return
-        }
-
-        viewModelScope.launch {
-            try {
-                val transcript = GeminiApiService.transcribeAudio(
-                    audioFile = file,
-                    mimeType = "audio/mp4",
-                    customApiKey = userApiKey.value
-                )
-
-                if (!transcript.isNullOrBlank()) {
-                    _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
-                        isTranscribing = false,
-                        transcribedText = transcript,
-                        errorMessage = null
-                    )
-                    onTranscribed?.invoke(transcript)
-
-                    if (autoProcessAsCommand) {
-                        _voiceState.value = _voiceState.value.copy(recognizedText = transcript)
-                        processVoiceCommand(transcript)
-                    }
-                } else {
-                    val keyConfigured = userApiKey.value.isNotBlank() || (BuildConfig.GEMINI_API_KEY.isNotBlank() && BuildConfig.GEMINI_API_KEY != "MY_GEMINI_API_KEY")
-                    _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
-                        isTranscribing = false,
-                        errorMessage = if (!keyConfigured) {
-                            "Gemini API key is required for cloud audio transcription. Add your API key in Settings -> Gemini AI, or use the Voice Command tab for instant on-device recognition."
-                        } else {
-                            "Transcription returned empty. Please speak clearly into the microphone and ensure internet is connected."
-                        }
-                    )
-                }
-            } catch (e: Exception) {
-                _audioTranscriptionState.value = _audioTranscriptionState.value.copy(
-                    isTranscribing = false,
-                    errorMessage = "Transcription failed: ${e.message}"
-                )
-            } finally {
-                try {
-                    file.delete()
-                } catch (ignored: Exception) {}
+        if (currentText.isNotBlank()) {
+            onTranscribed?.invoke(currentText)
+            if (autoProcessAsCommand) {
+                processVoiceCommand(currentText)
             }
         }
     }
