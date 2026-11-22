@@ -34,7 +34,7 @@ class BootReceiver : BroadcastReceiver() {
                 } catch (e: Exception) {
                     Log.e("BootReceiver", "Error restoring reminders on boot: ${e.message}")
                 } finally {
-                    pendingResult.finish()
+                    pendingResult?.finish()
                 }
             }
         }

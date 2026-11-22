@@ -45,7 +45,7 @@ class ReminderBroadcastReceiver : BroadcastReceiver() {
                     showReminderNotification(context, notificationManager, id, contentTitle, contentText)
                 }
             } finally {
-                pendingResult.finish()
+                pendingResult?.finish()
             }
         }
     }

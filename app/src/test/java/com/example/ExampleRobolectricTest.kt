@@ -126,15 +126,14 @@ class ExampleRobolectricTest {
         }
 
         receiver.onReceive(context, fireIntent)
-        // Wait briefly for goAsync coroutine to post notification
-        Thread.sleep(250)
+        waitUntil { shadowNm.allNotifications.size == 1 }
         assertEquals(1, shadowNm.allNotifications.size)
 
         // Mark completed, clear notifications, fire stale broadcast -> must NOT notify
         app.repository.markReminderCompleted(id, completed = true)
         nm.cancelAll()
         receiver.onReceive(context, fireIntent)
-        Thread.sleep(250)
+        Thread.sleep(300)
         assertEquals(0, shadowNm.allNotifications.size)
     }
 
@@ -167,7 +166,7 @@ class ExampleRobolectricTest {
 
         val bootReceiver = BootReceiver()
         bootReceiver.onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
-        Thread.sleep(300)
+        waitUntil { shadowAlarmManager.scheduledAlarms.size == 1 }
 
         // Only active reminder should be restored after reboot (not completedId)
         assertEquals(1, shadowAlarmManager.scheduledAlarms.size)
@@ -182,7 +181,7 @@ class ExampleRobolectricTest {
                 putExtra(ReminderBroadcastReceiver.EXTRA_ID, activeId)
             }
         )
-        Thread.sleep(250)
+        waitUntil { app.repository.getReminderById(activeId)?.isSnoozed == true }
         assertTrue(app.repository.getReminderById(activeId)!!.isSnoozed)
 
         // Trigger complete action via NotificationActionReceiver
@@ -192,8 +191,16 @@ class ExampleRobolectricTest {
                 putExtra(ReminderBroadcastReceiver.EXTRA_ID, activeId)
             }
         )
-        Thread.sleep(250)
+        waitUntil { app.repository.getReminderById(activeId)?.isCompleted == true }
         assertTrue(app.repository.getReminderById(activeId)!!.isCompleted)
+    }
+
+    private suspend fun waitUntil(timeoutMs: Long = 3000L, condition: suspend () -> Boolean) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (condition()) return
+            Thread.sleep(50)
+        }
     }
 
     @Test

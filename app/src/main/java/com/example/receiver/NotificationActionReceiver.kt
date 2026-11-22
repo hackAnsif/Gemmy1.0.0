@@ -26,7 +26,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     try {
                         repository.markReminderCompleted(id, completed = true)
                     } finally {
-                        pendingResult.finish()
+                        pendingResult?.finish()
                     }
                 }
             }
@@ -39,7 +39,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                         app.scheduler.cancelReminder(id)
                         repository.snoozeReminder(id, snoozeTime)
                     } finally {
-                        pendingResult.finish()
+                        pendingResult?.finish()
                     }
                 }
             }

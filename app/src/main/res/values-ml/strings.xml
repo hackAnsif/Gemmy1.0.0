@@ -13,15 +13,44 @@
     <string name="section_upcoming">വരാനിരിക്കുന്നവ</string>
     <string name="section_completed">പൂർത്തിയായവ</string>
 
+    <string name="hint_search_reminders">റിമൈൻഡറുകൾ തിരയുക…</string>
+    <string name="empty_home_title">എല്ലാം പൂർത്തിയായി</string>
+    <string name="empty_home_subtitle">പുതിയ റിമൈൻഡർ ചേർക്കാൻ താഴെയുള്ള ബട്ടൺ അമർത്തുക.</string>
+    <string name="empty_filtered_title">റിമൈൻഡറുകൾ കണ്ടെത്തിയില്ല</string>
+    <string name="empty_filtered_subtitle">തിരയൽ വാക്കുകൾ മാറ്റി വീണ്ടും ശ്രമിക്കുക.</string>
+
     <string name="action_add_reminder">റിമൈൻഡർ ചേർക്കുക</string>
     <string name="action_save_reminder">സംരക്ഷിക്കുക</string>
     <string name="action_update_reminder">പുതുക്കുക</string>
+    <string name="action_confirm_extracted">തീയതിയും സമയവും നൽകുക</string>
+    <string name="action_clear_completed">മായ്ക്കുക</string>
     <string name="action_save">സംരക്ഷിക്കുക</string>
     <string name="action_cancel">റദ്ദാക്കുക</string>
     <string name="action_delete">മായ്ക്കുക</string>
     <string name="action_confirm">സ്ഥിരീകരിക്കുക</string>
 
+    <string name="label_reminder_description">റിമൈൻഡർ വിവരണം</string>
+    <string name="hint_reminder_description">ഉദാ: Tomorrow 12 PM submit assignment</string>
+    <string name="helper_smart_parse">"Tomorrow 12 PM" പോലുള്ളവ ടൈപ്പ് ചെയ്യുക അല്ലെങ്കിൽ താഴെ നിന്ന് തിരഞ്ഞെടുക്കുക.</string>
+    <string name="title_detected_schedule">കണ്ടെത്തിയ തീയതിയും സമയവും</string>
     <string name="label_date">തീയതി</string>
     <string name="label_time">സമയം</string>
+    <string name="label_alarm_notification">അലാറം നോട്ടിഫിക്കേഷൻ</string>
+    <string name="desc_alarm_enabled">നിശ്ചിത സമയത്ത് നോട്ടിഫിക്കേഷൻ കാണിക്കുക</string>
+    <string name="desc_alarm_disabled">അലേർട്ട് ഇല്ലാതെ സംരക്ഷിക്കുക</string>
+    <string name="title_select_time">സമയം തിരഞ്ഞെടുക്കുക</string>
+    <string name="title_delete_reminder">റിമൈൻഡർ മായ്ക്കണോ?</string>
+    <string name="msg_delete_reminder_confirm">ഈ റിമൈൻഡറും അതിന്റെ അലേർട്ടും സ്ഥിരമായി നീക്കം ചെയ്യപ്പെടും.</string>
+
     <string name="notif_channel_reminders">ജെമ്മി റിമൈൻഡറുകൾ</string>
+
+    <string name="cd_gemmy_logo">ജെമ്മി ഐക്കൺ</string>
+    <string name="cd_open_settings">സെറ്റിംഗ്സ് തുറക്കുക</string>
+    <string name="cd_add_reminder">റിമൈൻഡർ ചേർക്കുക</string>
+    <string name="cd_navigate_back">തിരികെ പോകുക</string>
+    <string name="cd_search_reminders">റിമൈൻഡറുകൾ തിരയുക</string>
+    <string name="cd_clear_search">തിരയൽ മായ്ക്കുക</string>
+    <string name="cd_mark_complete">പൂർത്തിയായതായി അടയാളപ്പെടുത്തുക</string>
+    <string name="cd_mark_incomplete">സജീവമായി അടയാളപ്പെടുത്തുക</string>
+    <string name="cd_delete_reminder">റിമൈൻഡർ മായ്ക്കുക</string>
 </resources>
