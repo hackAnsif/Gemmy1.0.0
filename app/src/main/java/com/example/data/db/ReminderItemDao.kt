@@ -18,22 +18,10 @@ interface ReminderItemDao {
     @Query("SELECT * FROM reminder_items WHERE id = :id")
     suspend fun getReminderById(id: Long): ReminderItem?
 
-    @Query("SELECT * FROM reminder_items WHERE isCompleted = 0 AND dueTimeEpochMs >= :startEpochMs ORDER BY dueTimeEpochMs ASC")
-    fun getUpcomingReminders(startEpochMs: Long): Flow<List<ReminderItem>>
-
     @Query("SELECT * FROM reminder_items WHERE isCompleted = 0 AND dueTimeEpochMs >= :startEpochMs ORDER BY dueTimeEpochMs ASC LIMIT 1")
     suspend fun getNextUpcomingReminder(startEpochMs: Long): ReminderItem?
 
-    @Query("SELECT * FROM reminder_items WHERE isCompleted = 0 AND dueTimeEpochMs BETWEEN :dayStartEpochMs AND :dayEndEpochMs ORDER BY dueTimeEpochMs ASC")
-    fun getTodayReminders(dayStartEpochMs: Long, dayEndEpochMs: Long): Flow<List<ReminderItem>>
-
-    @Query("SELECT * FROM reminder_items WHERE isCompleted = 1 ORDER BY completedAtEpochMs DESC")
-    fun getCompletedReminders(): Flow<List<ReminderItem>>
-
-    @Query("SELECT * FROM reminder_items WHERE isCompleted = 0 AND dueTimeEpochMs < :currentEpochMs ORDER BY dueTimeEpochMs ASC")
-    fun getOverdueReminders(currentEpochMs: Long): Flow<List<ReminderItem>>
-
-    @Query("SELECT * FROM reminder_items WHERE isCompleted = 0")
+    @Query("SELECT * FROM reminder_items WHERE isCompleted = 0 AND alarmEnabled = 1")
     suspend fun getAllPendingRemindersOnce(): List<ReminderItem>
 
     @Query("SELECT * FROM reminder_items")
@@ -51,8 +39,14 @@ interface ReminderItemDao {
     @Query("DELETE FROM reminder_items WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    @Query("DELETE FROM reminder_items WHERE isCompleted = 1")
+    suspend fun deleteCompletedReminders()
+
     @Query("UPDATE reminder_items SET isCompleted = 1, completedAtEpochMs = :completedAt WHERE id = :id")
     suspend fun markComplete(id: Long, completedAt: Long)
+
+    @Query("UPDATE reminder_items SET isCompleted = 0, completedAtEpochMs = 0 WHERE id = :id")
+    suspend fun markIncomplete(id: Long)
 
     @Query("UPDATE reminder_items SET isSnoozed = 1, snoozeUntilEpochMs = :snoozeUntil, dueTimeEpochMs = :snoozeUntil WHERE id = :id")
     suspend fun snoozeReminder(id: Long, snoozeUntil: Long)

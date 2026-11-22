@@ -1,97 +1,233 @@
 package com.example
 
+import android.app.AlarmManager
+import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
-import com.example.data.model.ActionType
-import com.example.voice.GemmyNluParser
+import com.example.data.db.GemmyDatabase
+import com.example.data.model.ReminderItem
+import com.example.receiver.BootReceiver
+import com.example.receiver.NotificationActionReceiver
+import com.example.receiver.ReminderBroadcastReceiver
+import com.example.ui.GemmyApp
+import com.example.ui.theme.GemmyTheme
+import com.example.ui.viewmodel.GemmyViewModel
+import kotlinx.coroutines.runBlocking
+import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ExampleRobolectricTest {
 
-    @Test
-    fun readStringFromContext() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val appName = context.getString(R.string.app_name)
-        assertEquals("Gemmy", appName)
+    @get:Rule
+    val composeRule = createComposeRule()
+
+    private lateinit var context: Context
+    private lateinit var app: GemmyApplication
+
+    @Before
+    fun setUp() = runBlocking {
+        context = ApplicationProvider.getApplicationContext()
+        app = context.applicationContext as GemmyApplication
+        app.repository.clearAllReminders(context)
+    }
+
+    @After
+    fun tearDown() = runBlocking {
+        app.repository.clearAllReminders(context)
     }
 
     @Test
-    fun testEnglishLearningCommandParsing() {
-        val command = "Remind me to revise the word ephemeral after two weeks at 8 PM."
-        val action = GemmyNluParser.parseOffline(command)
-
-        assertEquals(ActionType.CREATE_LEARNING_ITEM, action.actionType)
-        assertEquals(20, action.timeHour)
-        assertEquals(0, action.timeMinute)
-        assertTrue(action.targetDateEpochMs != null)
+    fun verifyAppNameAndLauncherResourcesExist() {
+        assertEquals("Gemmy", context.getString(R.string.app_name))
+        assertNotNull(context.getDrawable(R.drawable.ic_gemmy_brand_icon))
+        assertNotNull(context.getDrawable(R.mipmap.ic_launcher))
+        assertNotNull(context.getDrawable(R.mipmap.ic_launcher_round))
     }
 
     @Test
-    fun testMalayalamLearningCommandParsing() {
-        val command = "നാളെ രാവിലെ 7 മണിക്ക് Fluid Mechanics പഠിക്കാൻ ഓർമ്മിപ്പിക്കണം."
-        val action = GemmyNluParser.parseOffline(command)
+    fun testReminderCrudScheduleAndCancelFlow() = runBlocking {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val shadowAlarmManager = shadowOf(alarmManager)
 
-        assertEquals(ActionType.CREATE_LEARNING_ITEM, action.actionType)
-        assertEquals(7, action.timeHour)
-        assertEquals(0, action.timeMinute)
+        val futureTime = System.currentTimeMillis() + 3_600_000L
+        val id = app.repository.insertReminder(
+            ReminderItem(
+                title = "Submit assignment",
+                dueTimeEpochMs = futureTime,
+                alarmEnabled = true
+            )
+        )
+        assertTrue(id > 0L)
+        assertEquals(1, shadowAlarmManager.scheduledAlarms.size)
+
+        // Update description and toggle alarm off -> alarm must be cancelled
+        val saved = app.repository.getReminderById(id)!!
+        app.repository.updateReminder(saved.copy(title = "Submit final assignment", alarmEnabled = false))
+        assertEquals(0, shadowAlarmManager.scheduledAlarms.size)
+
+        // Re-enable alarm and then mark completed -> schedules then cancels
+        app.repository.updateReminder(saved.copy(title = "Submit final assignment", alarmEnabled = true))
+        assertEquals(1, shadowAlarmManager.scheduledAlarms.size)
+
+        app.repository.markReminderCompleted(id, completed = true)
+        assertTrue(app.repository.getReminderById(id)!!.isCompleted)
+        assertEquals(0, shadowAlarmManager.scheduledAlarms.size)
+
+        // Mark incomplete -> reschedules future reminder
+        app.repository.markReminderCompleted(id, completed = false)
+        assertFalse(app.repository.getReminderById(id)!!.isCompleted)
+        assertEquals(1, shadowAlarmManager.scheduledAlarms.size)
+
+        // Delete reminder -> cancels alarm and removes from DB
+        app.repository.deleteReminder(id)
+        assertNull(app.repository.getReminderById(id))
+        assertEquals(0, shadowAlarmManager.scheduledAlarms.size)
     }
 
     @Test
-    fun testAlarmCommandParsing() {
-        val command = "Set an alarm for 6:30 AM tomorrow"
-        val action = GemmyNluParser.parseOffline(command)
+    fun testNotificationDeliveryAndDuplicateSuppression() = runBlocking {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val shadowNm = shadowOf(nm)
 
-        assertEquals(ActionType.CREATE_ALARM, action.actionType)
-        assertEquals(6, action.timeHour)
-        assertEquals(30, action.timeMinute)
+        val futureTime = System.currentTimeMillis() + 600_000L
+        val id = app.repository.insertReminder(
+            ReminderItem(
+                title = "Study physics",
+                dueTimeEpochMs = futureTime,
+                alarmEnabled = true
+            )
+        )
+
+        val receiver = ReminderBroadcastReceiver()
+        val fireIntent = Intent(context, ReminderBroadcastReceiver::class.java).apply {
+            action = ReminderBroadcastReceiver.ACTION_FIRE_REMINDER
+            putExtra(ReminderBroadcastReceiver.EXTRA_ID, id)
+            putExtra(ReminderBroadcastReceiver.EXTRA_TITLE, "Study physics")
+        }
+
+        receiver.onReceive(context, fireIntent)
+        // Wait briefly for goAsync coroutine to post notification
+        Thread.sleep(250)
+        assertEquals(1, shadowNm.allNotifications.size)
+
+        // Mark completed, clear notifications, fire stale broadcast -> must NOT notify
+        app.repository.markReminderCompleted(id, completed = true)
+        nm.cancelAll()
+        receiver.onReceive(context, fireIntent)
+        Thread.sleep(250)
+        assertEquals(0, shadowNm.allNotifications.size)
     }
 
     @Test
-    fun testAmbiguousCommandRequiresClarification() {
-        val command = "Remind me next Friday"
-        val action = GemmyNluParser.parseOffline(command)
+    fun testNotificationActionsAndBootRestore() = runBlocking {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val shadowAlarmManager = shadowOf(alarmManager)
 
-        assertTrue(action.needsClarification)
-        assertTrue(action.clarificationPrompt.isNotBlank())
+        val activeId = app.repository.insertReminder(
+            ReminderItem(
+                title = "Attend meeting",
+                dueTimeEpochMs = System.currentTimeMillis() + 1_800_000L,
+                alarmEnabled = true
+            )
+        )
+        val completedId = app.repository.insertReminder(
+            ReminderItem(
+                title = "Completed task",
+                dueTimeEpochMs = System.currentTimeMillis() + 1_800_000L,
+                alarmEnabled = true,
+                isCompleted = true
+            )
+        )
+
+        // Cancel existing scheduled alarms to simulate device reboot clearing AlarmManager
+        while (shadowAlarmManager.scheduledAlarms.isNotEmpty()) {
+            shadowAlarmManager.scheduledAlarms.removeAt(0)
+        }
+        assertEquals(0, shadowAlarmManager.scheduledAlarms.size)
+
+        val bootReceiver = BootReceiver()
+        bootReceiver.onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
+        Thread.sleep(300)
+
+        // Only active reminder should be restored after reboot (not completedId)
+        assertEquals(1, shadowAlarmManager.scheduledAlarms.size)
+        assertFalse(app.repository.getReminderById(activeId)!!.isCompleted)
+        assertTrue(app.repository.getReminderById(completedId)!!.isCompleted)
+
+        // Trigger snooze action via NotificationActionReceiver
+        val actionReceiver = NotificationActionReceiver()
+        actionReceiver.onReceive(
+            context,
+            Intent(NotificationActionReceiver.ACTION_NOTIFICATION_SNOOZE).apply {
+                putExtra(ReminderBroadcastReceiver.EXTRA_ID, activeId)
+            }
+        )
+        Thread.sleep(250)
+        assertTrue(app.repository.getReminderById(activeId)!!.isSnoozed)
+
+        // Trigger complete action via NotificationActionReceiver
+        actionReceiver.onReceive(
+            context,
+            Intent(NotificationActionReceiver.ACTION_NOTIFICATION_COMPLETE).apply {
+                putExtra(ReminderBroadcastReceiver.EXTRA_ID, activeId)
+            }
+        )
+        Thread.sleep(250)
+        assertTrue(app.repository.getReminderById(activeId)!!.isCompleted)
     }
 
     @Test
-    fun testGeminiTranscriptionModelTarget() {
-        assertEquals("gemini-3.5-flash", com.example.ai.GeminiApiService.MODEL_TRANSCRIBE)
-    }
+    fun testComposeCreateAndCompleteReminderFlow() {
+        val viewModel = GemmyViewModel(app.repository)
 
-    @Test
-    fun testAudioRecorderInstantiation() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val recorder = com.example.voice.AudioRecorderHelper(context)
-        org.junit.Assert.assertFalse(recorder.isRecording)
-        assertEquals(0, recorder.getMaxAmplitude())
-    }
+        composeRule.setContent {
+            GemmyTheme {
+                GemmyApp(viewModel = viewModel)
+            }
+        }
 
-    @Test
-    fun testAudioTranscriptionUiState() {
-        val state = com.example.ui.viewmodel.AudioTranscriptionUiState()
-        org.junit.Assert.assertFalse(state.isRecording)
-        org.junit.Assert.assertFalse(state.isTranscribing)
-        assertEquals("", state.transcribedText)
-        assertEquals(0, state.recordingDurationSec)
-    }
+        // Open Add Reminder screen
+        composeRule.onNodeWithTag("add_reminder_fab").performClick()
 
-    @Test
-    fun testRoomDatabaseAccess() = kotlinx.coroutines.runBlocking {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val db = com.example.data.db.GemmyDatabase.getDatabase(context)
-        org.junit.Assert.assertNotNull(db)
-        val reminders = db.reminderItemDao().getAllPendingRemindersOnce()
-        org.junit.Assert.assertNotNull(reminders)
-        val alarms = db.alarmItemDao().getActiveAlarmsOnce()
-        org.junit.Assert.assertNotNull(alarms)
+        // Enter natural-language reminder
+        composeRule.onNodeWithTag("reminder_description_input")
+            .performTextInput("Tomorrow 12 PM submit assignment")
+
+        // Smart parse preview should appear and apply extracted description/date/time
+        composeRule.onNodeWithTag("smart_parse_preview_card").assertIsDisplayed()
+        composeRule.onNodeWithTag("apply_smart_parse_button").performClick()
+
+        // Save reminder
+        composeRule.onNodeWithTag("save_reminder_button").performClick()
+
+        // Returned to Home screen and reminder appears
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Submit assignment").assertIsDisplayed()
+
+        // Verify persisted in Room
+        val all = runBlocking { GemmyDatabase.getDatabase(context).reminderItemDao().getAllRemindersOnce() }
+        assertEquals(1, all.size)
+        assertEquals("Submit assignment", all.first().title)
+        assertTrue(all.first().alarmEnabled)
     }
 }

@@ -1,67 +1,91 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import android.Manifest
+import android.app.AlarmManager
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.GraphicEq
-import com.example.ui.viewmodel.VoiceAssistantTab
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.outlined.Circle
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.EventNote
+import androidx.compose.material.icons.outlined.NotificationsOff
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.data.model.LearningItem
+import com.example.R
 import com.example.data.model.ReminderItem
-import com.example.ui.theme.GemmyDarkSecondary
-import com.example.ui.theme.GemmyIndigoPrimary
-import com.example.ui.theme.GemmyVioletTertiary
 import com.example.ui.viewmodel.GemmyViewModel
+import com.example.ui.viewmodel.ReminderFilter
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -70,524 +94,381 @@ import java.util.Locale
 @Composable
 fun HomeScreen(
     viewModel: GemmyViewModel,
-    onNavigateToAddLearning: () -> Unit,
-    onNavigateToCreateReminder: () -> Unit,
-    onNavigateToAlarms: () -> Unit,
-    onNavigateToLibrary: () -> Unit,
-    onNavigateToReminders: () -> Unit,
-    onNavigateToReview: (Long?) -> Unit,
-    onStartVoice: () -> Unit,
-    modifier: Modifier = Modifier
+    onAddReminder: (prefillText: String) -> Unit,
+    onEditReminder: (Long) -> Unit,
+    onOpenSettings: () -> Unit
 ) {
-    val totalLearned by viewModel.totalLearnedCount.collectAsStateWithLifecycle()
-    val dueCount by viewModel.dueCount.collectAsStateWithLifecycle()
-    val rememberedCount by viewModel.rememberedCount.collectAsStateWithLifecycle()
-    val reviewedToday by viewModel.reviewedTodayCount.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    val upcomingReminders by viewModel.upcomingReminders.collectAsStateWithLifecycle()
-    val todayReminders by viewModel.todayReminders.collectAsStateWithLifecycle()
-    val dueLearningItems by viewModel.dueLearningItems.collectAsStateWithLifecycle()
+    val buckets by viewModel.reminderBuckets.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val selectedFilter by viewModel.selectedFilter.collectAsStateWithLifecycle()
 
-    val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-    val greeting = when (currentHour) {
-        in 5..11 -> "Good morning!"
-        in 12..16 -> "Good afternoon!"
-        in 17..21 -> "Good evening!"
-        else -> "Good night!"
+    var hasNotificationPermission by remember {
+        mutableStateOf(checkNotificationPermission(context))
     }
-    val todayDateFormatted = SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()).format(Date())
+    var canScheduleExactAlarms by remember {
+        mutableStateOf(checkExactAlarmPermission(context))
+    }
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .testTag("home_screen_content"),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // A. Header Greeting
-        item {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = todayDateFormatted.uppercase(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = greeting,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.ExtraBold
-                )
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasNotificationPermission = granted || checkNotificationPermission(context)
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasNotificationPermission = checkNotificationPermission(context)
+                canScheduleExactAlarms = checkExactAlarmPermission(context)
+                viewModel.refreshDayBounds()
             }
         }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
-        // B. Gemmy Assistant Card
-        item {
-            AssistantHeroCard(
-                onStartVoice = onStartVoice,
-                onAddReminder = onNavigateToCreateReminder,
-                onAddAlarm = onNavigateToAlarms,
-                onAddLearning = onNavigateToAddLearning,
-                onTranscribeAudio = {
-                    viewModel.setVoiceAssistantTab(VoiceAssistantTab.AUDIO_TRANSCRIBE)
-                    onStartVoice()
-                }
+    val formattedCurrentDate = remember {
+        SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()).format(Date())
+    }
+
+    val showOverdue = selectedFilter == ReminderFilter.ALL || selectedFilter == ReminderFilter.TODAY
+    val showToday = selectedFilter == ReminderFilter.ALL || selectedFilter == ReminderFilter.TODAY
+    val showUpcoming = selectedFilter == ReminderFilter.ALL || selectedFilter == ReminderFilter.UPCOMING
+    val showCompleted = selectedFilter == ReminderFilter.ALL || selectedFilter == ReminderFilter.COMPLETED
+
+    val visibleEmpty = when (selectedFilter) {
+        ReminderFilter.ALL -> buckets.overdue.isEmpty() && buckets.today.isEmpty() && buckets.upcoming.isEmpty() && buckets.completed.isEmpty()
+        ReminderFilter.TODAY -> buckets.overdue.isEmpty() && buckets.today.isEmpty()
+        ReminderFilter.UPCOMING -> buckets.upcoming.isEmpty()
+        ReminderFilter.COMPLETED -> buckets.completed.isEmpty()
+    }
+
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        containerColor = MaterialTheme.colorScheme.background,
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { onAddReminder("") },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = stringResource(R.string.cd_add_reminder)
+                    )
+                },
+                text = { Text(text = stringResource(R.string.action_add_reminder), fontWeight = FontWeight.SemiBold) },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.testTag("add_reminder_fab")
             )
         }
-
-        // Due for Review Banner (if any items are due)
-        if (dueLearningItems.isNotEmpty()) {
-            item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onNavigateToReview(dueLearningItems.firstOrNull()?.id) }
-                        .testTag("due_reviews_banner"),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = GemmyDarkSecondary.copy(alpha = 0.15f)
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .widthIn(max = 640.dp)
+                    .fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Header with Gemmy branding, icon, current date & settings button
+                item(key = "header") {
+                    GemmyHeader(
+                        currentDateText = formattedCurrentDate,
+                        activeCount = buckets.totalActiveCount,
+                        onOpenSettings = onOpenSettings
                     )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
+                }
+
+                // Permission reminder banner (shown only when missing)
+                if (!hasNotificationPermission || !canScheduleExactAlarms) {
+                    item(key = "permission_banner") {
+                        PermissionBanner(
+                            missingNotifications = !hasNotificationPermission,
+                            missingExactAlarm = !canScheduleExactAlarms,
+                            onGrantNotifications = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            },
+                            onOpenExactAlarmSettings = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                    val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    }
+                                    context.startActivity(intent)
+                                }
+                            }
+                        )
+                    }
+                }
+
+                // Search field & filter chips
+                item(key = "search_and_filters") {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { viewModel.setSearchQuery(it) },
+                            placeholder = { Text(stringResource(R.string.hint_search_reminders)) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Search,
+                                    contentDescription = stringResource(R.string.cd_search_reminders)
+                                )
+                            },
+                            trailingIcon = {
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = { viewModel.setSearchQuery("") },
+                                        modifier = Modifier.testTag("clear_search_button")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Close,
+                                            contentDescription = stringResource(R.string.cd_clear_search)
+                                        )
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
-                                .size(44.dp)
-                                .background(GemmyDarkSecondary, CircleShape),
-                            contentAlignment = Alignment.Center
+                                .fillMaxWidth()
+                                .testTag("search_input")
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.School,
-                                contentDescription = null,
-                                tint = Color.Black
+                            FilterChip(
+                                selected = selectedFilter == ReminderFilter.ALL,
+                                onClick = { viewModel.setFilter(ReminderFilter.ALL) },
+                                label = { Text("All (${buckets.totalActiveCount + buckets.completed.size})") },
+                                modifier = Modifier.testTag("filter_all")
                             )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "${dueLearningItems.size} memory items due for review!",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                            FilterChip(
+                                selected = selectedFilter == ReminderFilter.TODAY,
+                                onClick = { viewModel.setFilter(ReminderFilter.TODAY) },
+                                label = { Text("Today (${buckets.today.size + buckets.overdue.size})") },
+                                modifier = Modifier.testTag("filter_today")
                             )
-                            Text(
-                                text = "Test your recall: ${dueLearningItems.first().title}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            FilterChip(
+                                selected = selectedFilter == ReminderFilter.UPCOMING,
+                                onClick = { viewModel.setFilter(ReminderFilter.UPCOMING) },
+                                label = { Text("Upcoming (${buckets.upcoming.size})") },
+                                modifier = Modifier.testTag("filter_upcoming")
                             )
-                        }
-                        Button(
-                            onClick = { onNavigateToReview(dueLearningItems.firstOrNull()?.id) },
-                            colors = ButtonDefaults.buttonColors(containerColor = GemmyDarkSecondary),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Review", color = Color.Black, fontWeight = FontWeight.Bold)
+                            FilterChip(
+                                selected = selectedFilter == ReminderFilter.COMPLETED,
+                                onClick = { viewModel.setFilter(ReminderFilter.COMPLETED) },
+                                label = { Text("Completed (${buckets.completed.size})") },
+                                modifier = Modifier.testTag("filter_completed")
+                            )
                         }
                     }
                 }
-            }
-        }
 
-        // E. Learning Memory Progress Stats
-        item {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Learning Memory Progress",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    TextButton(onClick = onNavigateToLibrary) {
-                        Text("View Library")
+                // Overdue Section
+                if (showOverdue && buckets.overdue.isNotEmpty()) {
+                    item(key = "section_overdue") {
+                        SectionHeader(
+                            title = stringResource(R.string.section_overdue),
+                            count = buckets.overdue.size,
+                            isUrgent = true
+                        )
+                    }
+                    items(buckets.overdue, key = { "overdue_${it.id}" }) { reminder ->
+                        ReminderCard(
+                            reminder = reminder,
+                            isOverdue = true,
+                            onToggleComplete = { viewModel.toggleReminderCompleted(reminder) },
+                            onEdit = { onEditReminder(reminder.id) },
+                            onDelete = { viewModel.deleteReminder(reminder.id) }
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    StatCard(
-                        title = "Saved",
-                        value = totalLearned.toString(),
-                        subtitle = "Total Concepts",
-                        icon = Icons.Default.AutoStories,
-                        accentColor = GemmyIndigoPrimary,
-                        modifier = Modifier.weight(1f)
-                    )
-                    StatCard(
-                        title = "Due Today",
-                        value = dueCount.toString(),
-                        subtitle = "To Review",
-                        icon = Icons.Default.AccessTime,
-                        accentColor = if (dueCount > 0) GemmyDarkSecondary else Color(0xFF94A3B8),
-                        modifier = Modifier.weight(1f)
-                    )
-                    StatCard(
-                        title = "Remembered",
-                        value = rememberedCount.toString(),
-                        subtitle = "Mastered",
-                        icon = Icons.Default.CheckCircle,
-                        accentColor = GemmyDarkSecondary,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
-
-        // D. Today's Schedule
-        item {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Today's Schedule",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    TextButton(onClick = onNavigateToReminders) {
-                        Text("All Reminders")
+                // Today's Reminders Section
+                if (showToday && buckets.today.isNotEmpty()) {
+                    item(key = "section_today") {
+                        SectionHeader(
+                            title = stringResource(R.string.section_today),
+                            count = buckets.today.size
+                        )
+                    }
+                    items(buckets.today, key = { "today_${it.id}" }) { reminder ->
+                        ReminderCard(
+                            reminder = reminder,
+                            isOverdue = false,
+                            onToggleComplete = { viewModel.toggleReminderCompleted(reminder) },
+                            onEdit = { onEditReminder(reminder.id) },
+                            onDelete = { viewModel.deleteReminder(reminder.id) }
+                        )
                     }
                 }
 
-                if (todayReminders.isEmpty()) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(20.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                // Upcoming Reminders Section
+                if (showUpcoming && buckets.upcoming.isNotEmpty()) {
+                    item(key = "section_upcoming") {
+                        SectionHeader(
+                            title = stringResource(R.string.section_upcoming),
+                            count = buckets.upcoming.size
+                        )
+                    }
+                    items(buckets.upcoming, key = { "upcoming_${it.id}" }) { reminder ->
+                        ReminderCard(
+                            reminder = reminder,
+                            isOverdue = false,
+                            onToggleComplete = { viewModel.toggleReminderCompleted(reminder) },
+                            onEdit = { onEditReminder(reminder.id) },
+                            onDelete = { viewModel.deleteReminder(reminder.id) }
+                        )
+                    }
+                }
+
+                // Completed Reminders Section
+                if (showCompleted && buckets.completed.isNotEmpty()) {
+                    item(key = "section_completed") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "No tasks or reminders scheduled for today.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            SectionHeader(
+                                title = stringResource(R.string.section_completed),
+                                count = buckets.completed.size
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(
-                                onClick = onNavigateToCreateReminder,
-                                colors = ButtonDefaults.buttonColors(containerColor = GemmyIndigoPrimary)
+                            TextButton(
+                                onClick = { viewModel.clearCompletedReminders() },
+                                modifier = Modifier.testTag("clear_completed_button")
                             ) {
-                                Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Add Reminder")
+                                Text(stringResource(R.string.action_clear_completed))
                             }
                         }
                     }
-                } else {
-                    todayReminders.forEach { reminder ->
-                        ReminderRowItem(
+                    items(buckets.completed, key = { "completed_${it.id}" }) { reminder ->
+                        ReminderCard(
                             reminder = reminder,
-                            onComplete = { viewModel.markReminderCompleted(reminder.id) },
-                            onSnooze = { viewModel.snoozeReminder(reminder.id) }
+                            isOverdue = false,
+                            onToggleComplete = { viewModel.toggleReminderCompleted(reminder) },
+                            onEdit = { onEditReminder(reminder.id) },
+                            onDelete = { viewModel.deleteReminder(reminder.id) }
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+
+                // Empty State
+                if (visibleEmpty) {
+                    item(key = "empty_state") {
+                        EmptyRemindersCard(
+                            isFilteredOrSearching = searchQuery.isNotBlank() || selectedFilter != ReminderFilter.ALL,
+                            onTryExample = { exampleText -> onAddReminder(exampleText) },
+                            onCreateNew = { onAddReminder("") }
+                        )
                     }
                 }
             }
-        }
-
-        // C. Upcoming Reminders
-        if (upcomingReminders.isNotEmpty()) {
-            item {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Upcoming Reminders",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(upcomingReminders.take(6)) { reminder ->
-                            UpcomingReminderMiniCard(reminder = reminder)
-                        }
-                    }
-                }
-            }
-        }
-
-        // F. Quick Action Buttons
-        item {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Quick Actions",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    QuickActionButton(
-                        label = "Add Memory",
-                        icon = Icons.Default.School,
-                        color = GemmyIndigoPrimary,
-                        onClick = onNavigateToAddLearning,
-                        modifier = Modifier.weight(1f)
-                    )
-                    QuickActionButton(
-                        label = "New Reminder",
-                        icon = Icons.Default.Notifications,
-                        color = GemmyDarkSecondary,
-                        onClick = onNavigateToCreateReminder,
-                        modifier = Modifier.weight(1f)
-                    )
-                    QuickActionButton(
-                        label = "Transcribe",
-                        icon = Icons.Default.GraphicEq,
-                        color = GemmyVioletTertiary,
-                        onClick = {
-                            viewModel.setVoiceAssistantTab(VoiceAssistantTab.AUDIO_TRANSCRIBE)
-                            onStartVoice()
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                    QuickActionButton(
-                        label = "Set Alarm",
-                        icon = Icons.Default.Alarm,
-                        color = Color(0xFF0EA5E9),
-                        onClick = onNavigateToAlarms,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
 
 @Composable
-fun AssistantHeroCard(
-    onStartVoice: () -> Unit,
-    onAddReminder: () -> Unit,
-    onAddAlarm: () -> Unit,
-    onAddLearning: () -> Unit,
-    onTranscribeAudio: () -> Unit = {}
+private fun GemmyHeader(
+    currentDateText: String,
+    activeCount: Int,
+    onOpenSettings: () -> Unit
 ) {
-    ElevatedCard(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("gemmy_assistant_card"),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(46.dp)
-                        .background(
-                            Brush.linearGradient(listOf(GemmyVioletTertiary, GemmyDarkSecondary)),
-                            CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
+            Image(
+                painter = painterResource(id = R.drawable.ic_gemmy_brand_icon),
+                contentDescription = stringResource(R.string.cd_gemmy_logo),
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(14.dp))
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = "Gemmy",
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(14.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Gemmy Offline AI",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        text = stringResource(R.string.app_name),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
                     )
-                    Text(
-                        text = "Speak alarms, reminders, or learning concepts offline",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                // Voice Mic Button
-                Box(
-                    modifier = Modifier
-                        .size(52.dp)
-                        .background(
-                            Brush.linearGradient(listOf(GemmyVioletTertiary, GemmyDarkSecondary)),
-                            CircleShape
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = if (activeCount == 1) "1 active" else "$activeCount active",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
-                        .clip(CircleShape)
-                        .clickable { onStartVoice() }
-                        .testTag("home_mic_button"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Mic,
-                        contentDescription = "Speak to Gemmy",
-                        tint = Color.White,
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Sub actions
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable { onAddLearning() }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(imageVector = Icons.Default.School, contentDescription = null, modifier = Modifier.size(16.dp), tint = GemmyIndigoPrimary)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Save Word", style = MaterialTheme.typography.labelMedium)
                     }
                 }
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable { onAddReminder() }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(imageVector = Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(16.dp), tint = GemmyDarkSecondary)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Reminder", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable { onAddAlarm() }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(imageVector = Icons.Default.Alarm, contentDescription = null, modifier = Modifier.size(16.dp), tint = GemmyVioletTertiary)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Alarm", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier
-                        .weight(1.2f)
-                        .clickable { onTranscribeAudio() }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(imageVector = Icons.Default.GraphicEq, contentDescription = null, modifier = Modifier.size(16.dp), tint = GemmyIndigoPrimary)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Transcribe", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
+                Text(
+                    text = currentDateText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
-    }
-}
 
-@Composable
-fun StatCard(
-    title: String,
-    value: String,
-    subtitle: String,
-    icon: ImageVector,
-    accentColor: Color,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp)
+        IconButton(
+            onClick = onOpenSettings,
+            modifier = Modifier
+                .size(48.dp)
+                .testTag("settings_button")
         ) {
             Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = value,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.ExtraBold
-            )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                imageVector = Icons.Outlined.Settings,
+                contentDescription = stringResource(R.string.cd_open_settings),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
 }
 
 @Composable
-fun ReminderRowItem(
-    reminder: ReminderItem,
-    onComplete: () -> Unit,
-    onSnooze: () -> Unit
+private fun PermissionBanner(
+    missingNotifications: Boolean,
+    missingExactAlarm: Boolean,
+    onGrantNotifications: () -> Unit,
+    onOpenExactAlarmSettings: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("permission_banner")
     ) {
         Row(
             modifier = Modifier
@@ -595,106 +476,388 @@ fun ReminderRowItem(
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Icon(
+                imageVector = Icons.Outlined.WarningAmber,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (missingNotifications) {
+                        "Enable notifications"
+                    } else {
+                        "Allow exact alarm timing"
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = if (missingNotifications) {
+                        "Required so scheduled reminders can alert you on time."
+                    } else {
+                        "Grant exact alarm permission for minute-accurate alerts."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            FilledTonalButton(
+                onClick = if (missingNotifications) onGrantNotifications else onOpenExactAlarmSettings,
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ),
+                modifier = Modifier.testTag("grant_permission_button")
+            ) {
+                Text(if (missingNotifications) "Allow" else "Settings")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(
+    title: String,
+    count: Int,
+    isUrgent: Boolean = false
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = if (isUrgent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onBackground
+        )
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = if (isUrgent) {
+                MaterialTheme.colorScheme.errorContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
+        ) {
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isUrgent) {
+                    MaterialTheme.colorScheme.onErrorContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReminderCard(
+    reminder: ReminderItem,
+    isOverdue: Boolean,
+    onToggleComplete: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val formattedSchedule = remember(reminder.dueTimeEpochMs, reminder.isSnoozed, reminder.snoozeUntilEpochMs) {
+        val targetMs = if (reminder.isSnoozed && reminder.snoozeUntilEpochMs > 0L) {
+            reminder.snoozeUntilEpochMs
+        } else {
+            reminder.dueTimeEpochMs
+        }
+        formatReminderDateTime(targetMs)
+    }
+
+    val containerColor = if (reminder.isCompleted) {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+
+    ElevatedCard(
+        onClick = onEdit,
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = containerColor),
+        elevation = CardDefaults.elevatedCardElevation(
+            defaultElevation = if (reminder.isCompleted) 0.dp else 2.dp
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("reminder_card_${reminder.id}")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             IconButton(
-                onClick = onComplete,
-                modifier = Modifier.size(36.dp)
+                onClick = onToggleComplete,
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("toggle_complete_${reminder.id}")
             ) {
                 Icon(
-                    imageVector = if (reminder.isCompleted) Icons.Default.CheckCircle else Icons.Default.Notifications,
-                    contentDescription = "Complete",
-                    tint = if (reminder.isCompleted) GemmyDarkSecondary else MaterialTheme.colorScheme.primary
+                    imageVector = if (reminder.isCompleted) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+                    contentDescription = if (reminder.isCompleted) {
+                        stringResource(R.string.cd_mark_incomplete)
+                    } else {
+                        stringResource(R.string.cd_mark_complete)
+                    },
+                    tint = if (reminder.isCompleted) {
+                        MaterialTheme.colorScheme.secondary
+                    } else if (isOverdue) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    modifier = Modifier.size(26.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.width(10.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Text(
                     text = reminder.title,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textDecoration = if (reminder.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                    color = if (reminder.isCompleted) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
                 )
-                val sdf = SimpleDateFormat("h:mm a", Locale.getDefault())
-                Text(
-                    text = "${sdf.format(Date(reminder.dueTimeEpochMs))} • ${reminder.category}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+
+                if (reminder.description.isNotBlank()) {
+                    Text(
+                        text = reminder.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Outlined.Schedule,
+                            contentDescription = null,
+                            tint = if (isOverdue && !reminder.isCompleted) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = formattedSchedule,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (isOverdue && !reminder.isCompleted) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+
+                    if (!reminder.isCompleted) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (reminder.alarmEnabled) {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = if (reminder.alarmEnabled) {
+                                        Icons.Filled.NotificationsActive
+                                    } else {
+                                        Icons.Outlined.NotificationsOff
+                                    },
+                                    contentDescription = null,
+                                    tint = if (reminder.alarmEnabled) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = if (reminder.alarmEnabled) "Alarm" else "Silent",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (reminder.alarmEnabled) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
-            TextButton(onClick = onSnooze) {
-                Text("Snooze")
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("delete_reminder_${reminder.id}")
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.DeleteOutline,
+                    contentDescription = stringResource(R.string.cd_delete_reminder),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
 }
 
 @Composable
-fun UpcomingReminderMiniCard(reminder: ReminderItem) {
-    Surface(
-        modifier = Modifier
-            .width(180.dp),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            val sdfDate = SimpleDateFormat("MMM d • h:mm a", Locale.getDefault())
-            Text(
-                text = reminder.category.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = GemmyDarkSecondary,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = reminder.title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = sdfDate.format(Date(reminder.dueTimeEpochMs)),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-fun QuickActionButton(
-    label: String,
-    icon: ImageVector,
-    color: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+private fun EmptyRemindersCard(
+    isFilteredOrSearching: Boolean,
+    onTryExample: (String) -> Unit,
+    onCreateNew: () -> Unit
 ) {
-    Surface(
-        modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .clickable { onClick() },
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(16.dp)
+    val examples = listOf(
+        "Tomorrow 12 PM submit assignment",
+        "Today 6 PM complete project",
+        "November 25 at 8 AM study physics"
+    )
+
+    OutlinedCard(
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .testTag("empty_reminders_card")
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(color.copy(alpha = 0.15f), CircleShape),
-                contentAlignment = Alignment.Center
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(56.dp)
             ) {
-                Icon(imageVector = icon, contentDescription = null, tint = color)
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Outlined.EventNote,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
-            Spacer(modifier = Modifier.height(8.dp))
+
             Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
+                text = if (isFilteredOrSearching) {
+                    stringResource(R.string.empty_filtered_title)
+                } else {
+                    stringResource(R.string.empty_home_title)
+                },
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
+
+            Text(
+                text = if (isFilteredOrSearching) {
+                    stringResource(R.string.empty_filtered_subtitle)
+                } else {
+                    stringResource(R.string.empty_home_subtitle)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (!isFilteredOrSearching) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Quick try with smart date detection:",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                examples.forEach { example ->
+                    FilledTonalButton(
+                        onClick = { onTryExample(example) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(text = example, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            } else {
+                TextButton(onClick = onCreateNew) {
+                    Text(stringResource(R.string.action_add_reminder))
+                }
+            }
         }
     }
+}
+
+private fun checkNotificationPermission(context: Context): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+    } else {
+        true
+    }
+}
+
+private fun checkExactAlarmPermission(context: Context): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+        am?.canScheduleExactAlarms() ?: true
+    } else {
+        true
+    }
+}
+
+private fun formatReminderDateTime(epochMs: Long): String {
+    val targetCal = Calendar.getInstance().apply { timeInMillis = epochMs }
+    val todayCal = Calendar.getInstance()
+    val tomorrowCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
+
+    val timeStr = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(epochMs))
+    val dateLabel = when {
+        isSameDay(targetCal, todayCal) -> "Today"
+        isSameDay(targetCal, tomorrowCal) -> "Tomorrow"
+        else -> SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(Date(epochMs))
+    }
+    return "$dateLabel • $timeStr"
+}
+
+private fun isSameDay(a: Calendar, b: Calendar): Boolean {
+    return a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
+        a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
 }

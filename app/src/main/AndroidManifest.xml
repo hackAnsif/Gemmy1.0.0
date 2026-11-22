@@ -1,16 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".GemmyApplication"
@@ -35,23 +29,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
             <intent-filter>
-                <action android:name="com.example.gemmy.ACTION_VOICE_COMMAND" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-            <intent-filter>
                 <action android:name="com.example.gemmy.ACTION_NEW_REMINDER" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 
-        <!-- Alarm and Reminder Broadcast Receiver -->
+        <!-- Reminder Broadcast Receiver -->
         <receiver
             android:name=".receiver.ReminderBroadcastReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.example.gemmy.ACTION_FIRE_REMINDER" />
-                <action android:name="com.example.gemmy.ACTION_FIRE_ALARM" />
-                <action android:name="com.example.gemmy.ACTION_FIRE_REVIEW" />
             </intent-filter>
         </receiver>
 
@@ -62,11 +50,10 @@
             <intent-filter>
                 <action android:name="com.example.gemmy.ACTION_NOTIFICATION_COMPLETE" />
                 <action android:name="com.example.gemmy.ACTION_NOTIFICATION_SNOOZE" />
-                <action android:name="com.example.gemmy.ACTION_DISMISS_ALARM" />
             </intent-filter>
         </receiver>
 
-        <!-- Boot & Time-Change Receiver to Reschedule Alarms -->
+        <!-- Boot & Time-Change Receiver to Restore Scheduled Reminders -->
         <receiver
             android:name=".receiver.BootReceiver"
             android:exported="true">
@@ -89,17 +76,6 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/gemmy_appwidget_info" />
         </receiver>
-
-        <!-- FileProvider for In-App APK Updates -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
 
     </application>
 

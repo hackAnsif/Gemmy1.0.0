@@ -24,6 +24,8 @@ data class ReminderItem(
     val title: String,
     val description: String = "",
     val dueTimeEpochMs: Long,
+    val advanceMinutes: Int = 0,
+    val alarmEnabled: Boolean = true,
     val category: String = "General",
     val priority: ReminderPriority = ReminderPriority.MEDIUM,
     val repeatSchedule: RepeatSchedule = RepeatSchedule.NONE,

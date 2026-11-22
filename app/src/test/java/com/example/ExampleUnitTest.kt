@@ -1,84 +1,120 @@
 package com.example
 
-import com.example.ai.OfflineAiEngine
-import com.example.data.model.ActionType
+import com.example.data.model.ReminderItem
+import com.example.util.SmartDateTimeParser
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Calendar
 
 class ExampleUnitTest {
 
-    @Test
-    fun testTomorrowSubmitAssignmentReminder() {
-        val result = OfflineAiEngine.parse("tomorrow I have to submit my assignment")
-        assertEquals(ActionType.CREATE_REMINDER, result.actionType)
-        assertEquals("Study", result.category)
-        assertTrue("Title should contain submit assignment: ${result.title}", result.title.contains("Submit", ignoreCase = true))
-        assertNotNull(result.targetDateEpochMs)
+    private fun fixedNow(
+        year: Int = 2026,
+        month: Int = Calendar.NOVEMBER,
+        day: Int = 22,
+        hour: Int = 10,
+        minute: Int = 0
+    ): Long {
+        return Calendar.getInstance().apply {
+            set(year, month, day, hour, minute, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
     }
 
     @Test
-    fun testParentsMeansLearningCard() {
-        val result = OfflineAiEngine.parse("parents means mother and father")
-        assertEquals(ActionType.CREATE_LEARNING_ITEM, result.actionType)
-        assertEquals("Parents", result.title)
-        assertEquals("mother and father", result.meaning)
-        assertTrue("Should enable spaced repetition", result.isSpacedRepetition)
+    fun parseTomorrowNoonReminder() {
+        val now = fixedNow()
+        val parsed = SmartDateTimeParser.parse("Tomorrow 12 PM submit assignment", now)
+
+        assertTrue(parsed.hasDate)
+        assertTrue(parsed.hasTime)
+        assertEquals("Submit assignment", parsed.description)
+        assertEquals(12, parsed.hour)
+        assertEquals(0, parsed.minute)
+
+        val cal = Calendar.getInstance().apply { timeInMillis = parsed.dateEpochMs!! }
+        assertEquals(2026, cal.get(Calendar.YEAR))
+        assertEquals(Calendar.NOVEMBER, cal.get(Calendar.MONTH))
+        assertEquals(23, cal.get(Calendar.DAY_OF_MONTH))
     }
 
     @Test
-    fun testParentsMeansExactPhrase() {
-        val result = OfflineAiEngine.parse("parents means")
-        assertEquals(ActionType.CREATE_LEARNING_ITEM, result.actionType)
-        assertEquals("Parents", result.title)
-        assertTrue("Should have a valid definition/meaning placeholder", result.meaning.isNotBlank())
-        assertTrue("Should enable spaced repetition", result.isSpacedRepetition)
+    fun parseMonthDayAndMorningTime() {
+        val now = fixedNow()
+        val parsed = SmartDateTimeParser.parse("November 25 at 8 AM study physics", now)
+
+        assertTrue(parsed.hasDate)
+        assertTrue(parsed.hasTime)
+        assertEquals("Study physics", parsed.description)
+        assertEquals(8, parsed.hour)
+        assertEquals(0, parsed.minute)
+
+        val cal = Calendar.getInstance().apply { timeInMillis = parsed.dateEpochMs!! }
+        assertEquals(2026, cal.get(Calendar.YEAR))
+        assertEquals(Calendar.NOVEMBER, cal.get(Calendar.MONTH))
+        assertEquals(25, cal.get(Calendar.DAY_OF_MONTH))
     }
 
     @Test
-    fun testSetAlarmTomorrow12pm() {
-        val result = OfflineAiEngine.parse("set an alarm tomorrow 12:00 p.m.")
-        assertEquals(ActionType.CREATE_ALARM, result.actionType)
-        assertEquals(12, result.timeHour)
-        assertEquals(0, result.timeMinute)
-        assertNotNull(result.targetDateEpochMs)
+    fun parseTodayEveningReminder() {
+        val now = fixedNow()
+        val parsed = SmartDateTimeParser.parse("Today 6 PM complete project", now)
+
+        assertTrue(parsed.hasDate)
+        assertTrue(parsed.hasTime)
+        assertEquals("Complete project", parsed.description)
+        assertEquals(18, parsed.hour)
+        assertEquals(0, parsed.minute)
+
+        val cal = Calendar.getInstance().apply { timeInMillis = parsed.dateEpochMs!! }
+        assertEquals(22, cal.get(Calendar.DAY_OF_MONTH))
     }
 
     @Test
-    fun testRemindMeToCallParentsAt5pm() {
-        val result = OfflineAiEngine.parse("remind me to call parents tomorrow at 5 pm")
-        assertEquals(ActionType.CREATE_REMINDER, result.actionType)
-        assertEquals(17, result.timeHour)
-        assertEquals(0, result.timeMinute)
-        assertTrue("Title should contain Call Parents: ${result.title}", result.title.contains("Call Parents", ignoreCase = true))
-        assertEquals("Personal", result.category)
+    fun parseMidnightTwelveAm() {
+        val now = fixedNow()
+        val parsed = SmartDateTimeParser.parse("Tomorrow 12 AM backup files", now)
+
+        assertTrue(parsed.hasDate)
+        assertTrue(parsed.hasTime)
+        assertEquals(0, parsed.hour)
+        assertEquals(0, parsed.minute)
+        assertEquals("Backup files", parsed.description)
     }
 
     @Test
-    fun testFormulaOfKineticEnergy() {
-        val result = OfflineAiEngine.parse("formula of kinetic energy is half m v squared")
-        assertEquals(ActionType.CREATE_LEARNING_ITEM, result.actionType)
-        assertEquals("Kinetic Energy", result.title)
-        assertEquals("half m v squared", result.meaning)
-        assertEquals("Formulas & Science", result.category)
+    fun parseRelativeMinutesOffset() {
+        val now = fixedNow(hour = 10, minute = 15)
+        val parsed = SmartDateTimeParser.parse("in 30 minutes drink water", now)
+
+        assertTrue(parsed.hasDate)
+        assertTrue(parsed.hasTime)
+        assertEquals(10, parsed.hour)
+        assertEquals(45, parsed.minute)
+        assertEquals("Drink water", parsed.description)
     }
 
     @Test
-    fun testMalayalamAlarmTomorrow12pm() {
-        val result = OfflineAiEngine.parse("നാളെ ഉച്ചയ്ക്ക് 12 മണിക്ക് അലാറം")
-        assertEquals(ActionType.CREATE_ALARM, result.actionType)
-        assertEquals(12, result.timeHour)
-        assertEquals(0, result.timeMinute)
-        assertNotNull(result.targetDateEpochMs)
+    fun parsePlainTextFallsBackGracefully() {
+        val now = fixedNow()
+        val parsed = SmartDateTimeParser.parse("Review English vocabulary list", now)
+
+        assertFalse(parsed.hasAnyMatch)
+        assertFalse(parsed.hasDate)
+        assertFalse(parsed.hasTime)
+        assertEquals("Review English vocabulary list", parsed.description)
     }
 
     @Test
-    fun testRelativeOffsetMinutes() {
-        val result = OfflineAiEngine.parse("remind me in 15 minutes to take medicine")
-        assertEquals(ActionType.CREATE_REMINDER, result.actionType)
-        assertEquals("Health", result.category)
-        assertNotNull(result.timeHour)
-        assertNotNull(result.timeMinute)
+    fun reminderDefaultsAreOfflineAndAlarmReady() {
+        val reminder = ReminderItem(
+            title = "Pay electricity bill",
+            dueTimeEpochMs = System.currentTimeMillis() + 3_600_000L
+        )
+        assertTrue(reminder.alarmEnabled)
+        assertFalse(reminder.isCompleted)
+        assertFalse(reminder.isSnoozed)
     }
 }

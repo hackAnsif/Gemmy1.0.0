@@ -9,6 +9,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import com.example.receiver.ReminderBroadcastReceiver
@@ -21,11 +25,13 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var viewModel: GemmyViewModel
 
+    private var initialDestination by mutableStateOf("home")
+    private var initialTargetId by mutableStateOf<Long?>(null)
+    private var launchTrigger by mutableIntStateOf(0)
+
     private val requestNotificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { _ ->
-        // Permission result handled gracefully
-    }
+    ) { _ -> }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,59 +41,57 @@ class MainActivity : ComponentActivity() {
         val factory = GemmyViewModelFactory(app.repository)
         viewModel = ViewModelProvider(this, factory)[GemmyViewModel::class.java]
 
-        checkNotificationPermission()
-
-        val (destination, startVoice, targetId) = parseIntent(intent)
+        requestNotificationPermissionIfNeeded()
+        applyIntent(intent)
 
         setContent {
             GemmyApp(
                 viewModel = viewModel,
-                initialDestination = destination,
-                initialStartVoice = startVoice,
-                initialTargetId = targetId
+                initialDestination = initialDestination,
+                initialTargetId = initialTargetId,
+                launchTrigger = launchTrigger
             )
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.refreshDayBounds()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val (destination, startVoice, targetId) = parseIntent(intent)
-        setContent {
-            GemmyApp(
-                viewModel = viewModel,
-                initialDestination = destination,
-                initialStartVoice = startVoice,
-                initialTargetId = targetId
-            )
-        }
+        applyIntent(intent)
     }
 
-    private fun parseIntent(intent: Intent?): Triple<String, Boolean, Long?> {
-        if (intent == null) return Triple("home", false, null)
+    private fun applyIntent(intent: Intent?) {
+        val (destination, targetId) = parseIntent(intent)
+        initialDestination = destination
+        initialTargetId = targetId
+        launchTrigger += 1
+    }
+
+    private fun parseIntent(intent: Intent?): Pair<String, Long?> {
+        if (intent == null) return Pair("home", null)
 
         val action = intent.action
-        val startVoice = intent.getBooleanExtra("start_voice", false) ||
-                action == GemmyWidgetProvider.ACTION_VOICE_COMMAND
-
         val destination = when {
-            action == GemmyWidgetProvider.ACTION_NEW_REMINDER -> "create_reminder"
-            intent.hasExtra(ReminderBroadcastReceiver.EXTRA_DESTINATION) ->
-                intent.getStringExtra(ReminderBroadcastReceiver.EXTRA_DESTINATION) ?: "home"
-            intent.hasExtra("destination") ->
-                intent.getStringExtra("destination") ?: "home"
+            action == GemmyWidgetProvider.ACTION_NEW_REMINDER -> "add_reminder"
+            intent.getStringExtra("destination") == "create_reminder" -> "add_reminder"
+            intent.getStringExtra("destination") == "add_reminder" -> "add_reminder"
             else -> "home"
         }
 
         val targetId = if (intent.hasExtra(ReminderBroadcastReceiver.EXTRA_ID)) {
             val id = intent.getLongExtra(ReminderBroadcastReceiver.EXTRA_ID, -1L)
-            if (id != -1L) id else null
+            if (id > 0L) id else null
         } else null
 
-        return Triple(destination, startVoice, targetId)
+        return Pair(destination, targetId)
     }
 
-    private fun checkNotificationPermission() {
+    private fun requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
                     this,

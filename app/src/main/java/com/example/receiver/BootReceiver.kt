@@ -18,7 +18,7 @@ class BootReceiver : BroadcastReceiver() {
             action == Intent.ACTION_TIME_CHANGED ||
             action == Intent.ACTION_TIMEZONE_CHANGED
         ) {
-            Log.d("BootReceiver", "Device restarted or time changed ($action), rescheduling alarms & reviews...")
+            Log.d("BootReceiver", "System event ($action): restoring pending reminder schedules...")
             val app = context.applicationContext as GemmyApplication
             val repository = app.repository
             val scheduler = app.scheduler
@@ -26,30 +26,13 @@ class BootReceiver : BroadcastReceiver() {
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val now = System.currentTimeMillis()
-
-                    // 1. Reschedule active reminders
                     val pendingReminders = repository.getAllPendingRemindersOnce()
                     for (reminder in pendingReminders) {
                         scheduler.scheduleReminder(reminder)
                     }
-
-                    // 2. Reschedule active alarms
-                    val activeAlarms = repository.getActiveAlarmsOnce()
-                    for (alarm in activeAlarms) {
-                        scheduler.scheduleAlarm(alarm)
-                    }
-
-                    // 3. Reschedule active learning reviews
-                    val futureReviews = repository.getFutureScheduledReviewsOnce(now)
-                    for (item in futureReviews) {
-                        scheduler.scheduleReview(item)
-                    }
-
-                    // 4. Update home widgets
                     scheduler.updateHomeWidget()
                 } catch (e: Exception) {
-                    Log.e("BootReceiver", "Error rescheduling items on boot: ${e.message}")
+                    Log.e("BootReceiver", "Error restoring reminders on boot: ${e.message}")
                 } finally {
                     pendingResult.finish()
                 }

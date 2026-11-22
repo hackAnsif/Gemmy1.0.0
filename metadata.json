@@ -1,6 +1,6 @@
 {
   "name": "Gemmy",
-  "description": "Smart Memory & Reminder Assistant with voice input, learning cards, spaced-repetition, alarms, notifications, and home screen widget.",
+  "description": "Lightweight, 100% offline Android reminder app with smart text date/time detection, exact alarm notifications, and Material 3 design.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

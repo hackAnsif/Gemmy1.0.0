@@ -41,7 +41,7 @@
                 android:id="@+id/widget_subtitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Memory &amp; Reminders"
+                android:text="Smart Reminder"
                 android:textColor="#94A3B8"
                 android:textSize="11sp" />
         </LinearLayout>
@@ -49,21 +49,11 @@
         <!-- Quick Add Reminder Button -->
         <ImageButton
             android:id="@+id/widget_add_button"
-            android:layout_width="34dp"
-            android:layout_height="34dp"
-            android:layout_marginEnd="8dp"
-            android:background="@drawable/widget_card_bg"
-            android:src="@drawable/ic_add_white"
-            android:contentDescription="Add Reminder" />
-
-        <!-- Microphone Assistant Button -->
-        <ImageButton
-            android:id="@+id/widget_mic_button"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:background="@drawable/widget_mic_bg"
-            android:src="@drawable/ic_mic_white"
-            android:contentDescription="Voice Assistant Gemmy" />
+            android:background="@drawable/widget_add_bg"
+            android:src="@drawable/ic_add_white"
+            android:contentDescription="Add Reminder" />
     </LinearLayout>
 
     <!-- Up Next Section -->
@@ -106,7 +96,7 @@
             android:layout_marginTop="2dp"
             android:ellipsize="end"
             android:maxLines="1"
-            android:text="Tap mic or add to schedule"
+            android:text="Tap + to add a reminder"
             android:textColor="#94A3B8"
             android:textSize="11sp" />
     </LinearLayout>

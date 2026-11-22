@@ -66,19 +66,6 @@ jobs:
       - name: Grant Execute Permission to gradlew
         run: chmod +x gradlew
 
-      - name: Prepare Environment (.env)
-        run: |
-          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
-            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
-            echo "Configured .env from GEMINI_API_KEY GitHub Secret."
-          elif [ -f .env.example ]; then
-            cp .env.example .env
-            echo "Copied .env.example to .env."
-          else
-            touch .env
-            echo "Created empty .env."
-          fi
-
       - name: Configure Keystores & Signing
         run: |
           # 1. Ensure debug.keystore exists (required by debugConfig in build.gradle.kts)

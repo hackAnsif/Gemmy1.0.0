@@ -29,7 +29,9 @@ class GemmyWidgetProvider : AppWidgetProvider() {
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val thisWidget = ComponentName(context, GemmyWidgetProvider::class.java)
             val appWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
-            updateWidgets(context, appWidgetManager, appWidgetIds)
+            if (appWidgetIds.isNotEmpty()) {
+                updateWidgets(context, appWidgetManager, appWidgetIds)
+            }
         }
     }
 
@@ -43,25 +45,10 @@ class GemmyWidgetProvider : AppWidgetProvider() {
             for (appWidgetId in appWidgetIds) {
                 val views = RemoteViews(context.packageName, R.layout.widget_gemmy)
 
-                // 1. Mic Button Intent -> Opens voice command in MainActivity
-                val micIntent = Intent(context, MainActivity::class.java).apply {
-                    action = ACTION_VOICE_COMMAND
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    putExtra("start_voice", true)
-                }
-                val micPendingIntent = PendingIntent.getActivity(
-                    context,
-                    1001,
-                    micIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                views.setOnClickPendingIntent(R.id.widget_mic_button, micPendingIntent)
-
-                // 2. Add Button Intent -> Opens create reminder in MainActivity
                 val addIntent = Intent(context, MainActivity::class.java).apply {
                     action = ACTION_NEW_REMINDER
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    putExtra("destination", "create_reminder")
+                    putExtra("destination", "add_reminder")
                 }
                 val addPendingIntent = PendingIntent.getActivity(
                     context,
@@ -71,7 +58,6 @@ class GemmyWidgetProvider : AppWidgetProvider() {
                 )
                 views.setOnClickPendingIntent(R.id.widget_add_button, addPendingIntent)
 
-                // 3. Container Intent -> Opens Home in MainActivity
                 val openIntent = Intent(context, MainActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 }
@@ -83,17 +69,15 @@ class GemmyWidgetProvider : AppWidgetProvider() {
                 )
                 views.setOnClickPendingIntent(R.id.widget_root, openPendingIntent)
 
-                // Set real upcoming reminder content
                 if (nextReminder != null) {
                     views.setTextViewText(R.id.widget_reminder_label, "NEXT UP")
                     views.setTextViewText(R.id.widget_reminder_title, nextReminder.title)
                     val timeFormat = SimpleDateFormat("EEE, MMM d • h:mm a", Locale.getDefault())
-                    val formattedTime = timeFormat.format(Date(nextReminder.dueTimeEpochMs))
-                    views.setTextViewText(R.id.widget_reminder_time, formattedTime)
+                    views.setTextViewText(R.id.widget_reminder_time, timeFormat.format(Date(nextReminder.dueTimeEpochMs)))
                 } else {
                     views.setTextViewText(R.id.widget_reminder_label, "ALL CAUGHT UP")
                     views.setTextViewText(R.id.widget_reminder_title, "No upcoming reminders")
-                    views.setTextViewText(R.id.widget_reminder_time, "Tap mic or + to add something")
+                    views.setTextViewText(R.id.widget_reminder_time, "Tap + to add a reminder")
                 }
 
                 appWidgetManager.updateAppWidget(appWidgetId, views)
@@ -102,17 +86,18 @@ class GemmyWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
-        const val ACTION_VOICE_COMMAND = "com.example.gemmy.ACTION_VOICE_COMMAND"
         const val ACTION_NEW_REMINDER = "com.example.gemmy.ACTION_NEW_REMINDER"
 
         fun updateAllWidgets(context: Context) {
-            val intent = Intent(context, GemmyWidgetProvider::class.java).apply {
-                action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
-            }
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val thisWidget = ComponentName(context, GemmyWidgetProvider::class.java)
             val ids = appWidgetManager.getAppWidgetIds(thisWidget)
-            intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
+            if (ids.isEmpty()) return
+
+            val intent = Intent(context, GemmyWidgetProvider::class.java).apply {
+                action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
+            }
             context.sendBroadcast(intent)
         }
     }
