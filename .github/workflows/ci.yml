@@ -36,14 +36,6 @@ jobs:
       - name: Grant Execute Permission to gradlew
         run: chmod +x gradlew
 
-      - name: Prepare Environment
-        run: |
-          if [ -f .env.example ]; then
-            cp .env.example .env
-          else
-            touch .env
-          fi
-
       - name: Configure Debug Keystore
         run: |
           if [ ! -f "${{ github.workspace }}/debug.keystore" ]; then
@@ -60,7 +52,7 @@ jobs:
           fi
 
       - name: Run Unit Tests
-        run: ./gradlew testDebugUnitTest -Didea.headless=true
+        run: ./gradlew testDebugUnitTest --no-configuration-cache -Didea.headless=true
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug -Didea.headless=true
+        run: ./gradlew assembleDebug --no-configuration-cache -Didea.headless=true

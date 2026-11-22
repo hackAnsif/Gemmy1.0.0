@@ -9,6 +9,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.db.GemmyDatabase
@@ -159,8 +160,8 @@ class ExampleRobolectricTest {
         )
 
         // Cancel existing scheduled alarms to simulate device reboot clearing AlarmManager
-        while (shadowAlarmManager.scheduledAlarms.isNotEmpty()) {
-            shadowAlarmManager.scheduledAlarms.removeAt(0)
+        shadowAlarmManager.scheduledAlarms.toList().forEach { scheduled ->
+            scheduled.operation?.let { alarmManager.cancel(it) }
         }
         assertEquals(0, shadowAlarmManager.scheduledAlarms.size)
 
@@ -225,10 +226,18 @@ class ExampleRobolectricTest {
         composeRule.onNodeWithTag("apply_smart_parse_button").performClick()
 
         // Save reminder
-        composeRule.onNodeWithTag("save_reminder_button").performClick()
+        composeRule.onNodeWithTag("save_reminder_button")
+            .performScrollTo()
+            .performClick()
 
         // Returned to Home screen and reminder appears
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            runBlocking {
+                GemmyDatabase.getDatabase(context).reminderItemDao().getAllRemindersOnce().size == 1
+            }
+        }
         composeRule.waitForIdle()
+        composeRule.onNodeWithTag("add_reminder_fab").assertIsDisplayed()
         composeRule.onNodeWithText("Submit assignment").assertIsDisplayed()
 
         // Verify persisted in Room
